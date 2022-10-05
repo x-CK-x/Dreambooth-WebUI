@@ -14,8 +14,9 @@ https://user-images.githubusercontent.com/48079849/193848345-7191bafd-eddc-4392-
 Please make sure to install python: [Python Official Website](https://www.python.org/downloads/)
 1. And add it to PATH
 2. Install the packages with:
-    - ./setup.sh
-3. Run the UI:  python webui.py
+    -     ./setup.sh
+3. Run the UI:
+    -     python webui.py
 4. Follow the 1-Time installation setup on the GUI
 - Features a Model & Dataset Configuration tab, and Model Training tab
 
@@ -28,3 +29,4 @@ Please make sure to install python: [Python Official Website](https://www.python
 - [ ] Multi-GPU support:
     - Model Parallelism
 - [ ] Utilizing Other Sampling Algorithms
+- [ ] Windows Support
