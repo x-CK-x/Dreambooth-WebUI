@@ -22,6 +22,7 @@ Please make sure to install python: [Python Official Website](https://www.python
 
 
 ### Additional planned features:
+- [ ] Reduce VRAM Memory Requirement: [https://www.reddit.com/r/StableDiffusion/comments/xwdj79/dreambooth_training_in_under_8_gb_vram_and/](https://www.reddit.com/r/StableDiffusion/comments/xwdj79/dreambooth_training_in_under_8_gb_vram_and/)
 - [ ] The Pruning Feature from the repo (12GB to 2GB)
 - [ ] Resolve Gradio Components not updating Components for real-time logging feed
 - [ ] A Training Job Scheduler
