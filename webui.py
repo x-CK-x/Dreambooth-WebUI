@@ -4,6 +4,7 @@ import sys
 import subprocess as sub
 import glob
 import json
+import torch
 
 # set local path
 cwd = os.getcwd()
@@ -56,33 +57,38 @@ else:
         del data
         json_file.close()
 
+def verbose_print(text):
+    if "verbose" in model_config_df and model_config_df["verbose"]:
+        print(f"{text}")
+
 def dependency_install_button():
     return sub.run(f"pip install -r {cwd}/requirements.txt".split(" "), stdout=sub.PIPE).stdout.decode("utf-8")
 
 def update_JSON():
     temp = [model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df]
     for entry in temp:
-        print(entry)
+        verbose_print(entry)
 
     with open(json_file_name, "w") as f:
         json.dump([model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df], indent=4, fp=f)
     f.close()
 
 def create_data_dirs():
-    if not os.path.exists(dataset_config_df["dataset_path"]):
-        dataset = dataset_config_df["dataset_path"]
-        dir_create_str = f"mkdir -p {dataset}"
-        sub.run(dir_create_str.split(" "))
-    if not os.path.exists(dataset_config_df["reg_dataset_path"]):
-        dataset = dataset_config_df["reg_dataset_path"]
-        dir_create_str = f"mkdir -p {dataset}"
-        sub.run(dir_create_str.split(" "))
+    dataset_type = ["dataset_path", "reg_dataset_path"]
+    for i in range(0, len(dataset_type)):
+        if not os.path.exists(dataset_config_df[dataset_type[i]]) and not dataset_config_df[dataset_type[i]] == '':
+            dataset = dataset_config_df[dataset_type[i]]
+            dir_create_str = f"mkdir -p {dataset}"
+            sub.run(dir_create_str.split(" "))
 
 def model_choice(ver):
     for i in range(0, len(ckpt_files)):
         if ver == ckpt_files[i]:
             return ver
     return None
+
+def verbose_checkbox():
+    model_config_df["verbose"] = not model_config_df["verbose"]
 
 def model_config_save_button(model_name, gpu_used_var, project_name, class_word, config_path, dataset_path, reg_dataset_path):
     model_config_df["model_name"] = model_name
@@ -95,23 +101,24 @@ def model_config_save_button(model_name, gpu_used_var, project_name, class_word,
 
     all_lines = None
     is_target_same = False
-    with open(os.path.join(cwd, "ldm/data/personalized.py"), "r") as script_file:
-        lines = script_file.readlines()
-        for i in range(0, len(lines)):
-            if "{}" in lines[i]:
-                prior_class = (lines[i].split("\'")[1]).split(" ")[0]
-                if prior_class == dataset_config_df["project_name"]:
-                    is_target_same = True
+    if not dataset_config_df["project_name"] == '':
+        with open(os.path.join(cwd, "ldm/data/personalized.py"), "r") as script_file:
+            lines = script_file.readlines()
+            for i in range(0, len(lines)):
+                if "{}" in lines[i]:
+                    prior_class = (lines[i].split("\'")[1]).split(" ")[0]
+                    if prior_class == dataset_config_df["project_name"]:
+                        is_target_same = True
+                        break
+                    lines[i] = lines[i].replace(prior_class, str(dataset_config_df["project_name"]))
+                    all_lines = lines
                     break
-                lines[i] = lines[i].replace(prior_class, dataset_config_df["project_name"])
-                all_lines = lines
-                break
-        script_file.close()
-    if not is_target_same:
-        with open(os.path.join(cwd, "ldm/data/personalized.py"), "w") as script_file:
-            for line in all_lines:
-                script_file.write(line)
             script_file.close()
+        if not is_target_same:
+            with open(os.path.join(cwd, "ldm/data/personalized.py"), "w") as script_file:
+                for line in all_lines:
+                    script_file.write(line)
+                script_file.close()
 
     # update json file
     update_JSON()
@@ -147,9 +154,9 @@ def image_generation_button():
     prompt = image_gen_config_df['prompt_name'].replace('_', ' ')
     image_gen_cmd = f"python scripts/stable_txt2img.py --seed {image_gen_config_df['seed_var']} --ddim_eta {image_gen_config_df['ddim_eta_var']} --n_samples {image_gen_config_df['n_samples']} --n_iter {image_gen_config_df['n_iter']} --scale {image_gen_config_df['scale_var']} --ddim_steps {image_gen_config_df['ddim_steps']} --ckpt {model_config_df['model_name']} --prompt \'{prompt}\' --outdir {image_gen_config_df['final_img_path']}"
 
-    print("============================== IMAGE GENERATION TEST ==============================")
-    print(image_gen_cmd)
-    print("============================== --------------------- ==============================")
+    verbose_print("============================== IMAGE GENERATION TEST ==============================")
+    verbose_print(image_gen_cmd)
+    verbose_print("============================== --------------------- ==============================")
 
     if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
         if "seed_var" in image_gen_config_df and "ddim_eta_var" in image_gen_config_df and "n_samples" in image_gen_config_df and "n_iter" in image_gen_config_df and "scale_var" in image_gen_config_df and "ddim_steps" in image_gen_config_df and "model_name" in model_config_df and "prompt_name" in image_gen_config_df and "final_img_path" in image_gen_config_df:
@@ -173,9 +180,9 @@ def train_button():
     prompt = dataset_config_df['class_word'].replace('_', ' ')
     train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} --reg_data_root {image_gen_config_df['final_img_path']} -n {dataset_config_df['project_name']} --gpus {system_config_df['gpu_used_var']}, --data_root {dataset_config_df['dataset_path']} --max_training_steps {train_config_df['max_training_steps']} --class_word {prompt} --no-test"
 
-    print("============================== TRAINING COMMAND TEST ==============================")
-    print(train_cmd)
-    print("============================== --------------------- ==============================")
+    verbose_print("============================== TRAINING COMMAND TEST ==============================")
+    verbose_print(train_cmd)
+    verbose_print("============================== --------------------- ==============================")
 
     if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
         if 'config_path' in dataset_config_df and 'model_name' in model_config_df and 'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and 'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and 'max_training_steps' in train_config_df and prompt:
@@ -192,7 +199,7 @@ with gr.Blocks() as demo:
         ### Please move the downloaded model into "this" repository folder
         """)
 
-        print("ckpt_files", ckpt_files)
+        verbose_print(f"ckpt_files {ckpt_files}")
 
         with gr.Row():
             if "model_name" in model_config_df:
@@ -222,11 +229,17 @@ with gr.Blocks() as demo:
             reg_dataset_path = gr.Textbox(lines=1, interactive=True, label='Path to Regularization Dataset')
 
         with gr.Row():
-            import torch
-            if not "gpu_used_var" in system_config_df:
-                system_config_df["gpu_used_var"] = [i for i in range(0, torch.cuda.device_count())][0] # EXPECT THIS TO CHANGE IN THE FUTURE
-            temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
-            gpu_used_var = gr.inputs.Radio(temp_text, default=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU')
+            with gr.Column():
+                if "verbose" in model_config_df:
+                    verbose = gr.Checkbox(interactive=True, label='Verbose Mode', value=model_config_df["verbose"])
+                else:
+                    model_config_df["verbose"] = False
+                    verbose = gr.Checkbox(interactive=True, label='Verbose Mode', value=False)
+            with gr.Column():
+                if not "gpu_used_var" in system_config_df:
+                    system_config_df["gpu_used_var"] = [i for i in range(0, torch.cuda.device_count())][0] # EXPECT THIS TO CHANGE IN THE FUTURE
+                temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
+                gpu_used_var = gr.inputs.Radio(temp_text, default=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU')
 
     model_var.change(fn=model_choice, inputs=[model_var], outputs=[])
     config_save_var.click(fn=model_config_save_button,
@@ -240,6 +253,7 @@ with gr.Blocks() as demo:
                                   ],
                           outputs=[]
                           )
+    verbose.change(fn=verbose_checkbox, inputs=[], outputs=[])
 
     with gr.Tab("Image Regularization"):
         gr.Markdown(
@@ -299,7 +313,6 @@ with gr.Blocks() as demo:
 
         with gr.Row():
             generate_images_var = gr.Button(value="Generate", variant='secondary')
-        image_gen_output = gr.Textbox(lines=16, interactive=False, label='Regularized Image Generation Logs')
 
     regularizer_var.change(fn=change_regularizer_view, inputs=[regularizer_var], outputs=[])
     regularizer_save_var.click(fn=image_gen_config_save_button, inputs=[final_img_path,
@@ -311,7 +324,7 @@ with gr.Blocks() as demo:
                                                                         n_iter,
                                                                         ddim_steps
                                                                         ], outputs=[final_img_path])
-    generate_images_var.click(fn=image_generation_button, inputs=[], outputs=[image_gen_output], show_progress=True, scroll_to_output=True)
+    generate_images_var.click(fn=image_generation_button, inputs=[], outputs=[], show_progress=True, scroll_to_output=True)
 
     with gr.Tab("Fine-Tuning Model"):
         fine_tine_save_var = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -327,12 +340,11 @@ with gr.Blocks() as demo:
 
         with gr.Row():
             train_out_var = gr.Button(value="Generate", variant='secondary')
-        train_output = gr.Textbox(lines=30, interactive=False, label='Training Logs')
 
     fine_tine_save_var.click(fn=train_save_button, inputs=[max_training_steps,
                                                                         batch_size
                                                                         ], outputs=[])
-    train_out_var.click(fn=train_button, inputs=[], outputs=[train_output], show_progress=True, scroll_to_output=True)
+    train_out_var.click(fn=train_button, inputs=[], outputs=[], show_progress=True, scroll_to_output=True)
 
 if __name__ == "__main__":
     demo.launch()
