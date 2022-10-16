@@ -18,7 +18,7 @@ from contextlib import contextmanager, nullcontext
 from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
-
+import shutil
 
 def chunk(it, size):
     it = iter(it)
@@ -177,8 +177,11 @@ def main():
         choices=["full", "autocast"],
         default="autocast"
     )
-
-
+    parser.add_argument(
+        "--keep_jpgs",
+        action='store_true',
+        help="Both jpgs & pngs are created. Keep jpgs?  (default: true)",
+    )
     parser.add_argument(
         "--embedding_path", 
         type=str, 
@@ -200,7 +203,6 @@ def main():
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
-
 
     #ldm.models.diffusion.
 
@@ -282,20 +284,30 @@ def main():
                     grid = rearrange(grid, 'n b c h w -> (n b) c h w')
                     
                     for i in range(grid.size(0)):
-                        save_image(grid[i, :, :, :], os.path.join(outpath,opt.prompt+'_{}.png'.format(i)))
+                        temp_name = f"{opt.prompt}_{i}.png".replace('\'', '')
+                        save_image(grid[i, :, :, :], os.path.join(outpath, temp_name))
                     grid = make_grid(grid, nrow=n_rows)
 
                     # to image
                     grid = 255. * rearrange(grid, 'c h w -> h w c').cpu().numpy()
-                    Image.fromarray(grid.astype(np.uint8)).save(os.path.join(outpath, f'{prompt.replace(" ", "-")}-{grid_count:04}.jpg'))
-                    grid_count += 1
-                    
-                    
-
+                    error_flag = False
+                    try:
+                        Image.fromarray(grid.astype(np.uint8)).save(
+                            os.path.join(outpath, f'{prompt.replace(" ", "-")}-{grid_count:04}.jpg'))
+                    except Exception:
+                        error_flag = True
+                    else:
+                        grid_count += 1
+                    finally:
+                        if error_flag:
+                            print(f"error occurred converting image ( {grid_count} ) .png")
                 toc = time.time()
 
     print(f"Your samples are ready and waiting for you here: \n{outpath} \n"
           f" \nEnjoy.")
+
+    if not opt.keep_jpgs:
+        shutil.rmtree(os.path.join(outpath, "samples"))
 
 
 if __name__ == "__main__":

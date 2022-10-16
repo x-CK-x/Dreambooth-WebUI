@@ -1,6 +1,5 @@
 pip install omegaconf
 pip install einops
-pip install pytorch-lightning==1.6.5
 pip install test-tube
 pip install transformers
 pip install kornia
@@ -18,3 +17,8 @@ pip install -qq "ipywidgets>=7,<8"
 pip install huggingface_hub
 pip install ipywidgets==7.7.1
 pip install gradio
+pip install torchvision
+conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch -y
+pip install pytorch-lightning==1.7.6
+pip install clip
+export MKL_SERVICE_FORCE_INTEL=1

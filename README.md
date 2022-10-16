@@ -17,8 +17,8 @@ Please make sure to install python: [Python Official Website](https://www.python
     -     ./setup.sh
 3. Run the UI:
     -     python webui.py
-4. Follow the 1-Time installation setup on the GUI
-- Features a Model & Dataset Configuration tab, and Model Training tab
+
+- GUI Features a Model & Dataset Configuration tab, and Model Training tab
 
 
 ### Additional planned features:

@@ -506,7 +506,7 @@ class LatentDiffusion(DDPM):
 
     @rank_zero_only
     @torch.no_grad()
-    def on_train_batch_start(self, batch, batch_idx):#, dataloader_idx
+    def on_train_batch_start(self, batch, batch_idx):#, dataloader_idx):
         # only for very first batch
         if self.scale_by_std and self.current_epoch == 0 and self.global_step == 0 and batch_idx == 0 and not self.restarted_from_ckpt:
             assert self.scale_factor == 1., 'rather not use custom rescaling and std-rescaling simultaneously'
@@ -558,14 +558,14 @@ class LatentDiffusion(DDPM):
             assert config != '__is_unconditional__'
             model = instantiate_from_config(config)
             self.cond_stage_model = model
-            
-    
+
+
     # def instantiate_embedding_manager(self, config, embedder):
     #     model = instantiate_from_config(config, embedder=embedder)
 
     #     if config.params.get("embedding_manager_ckpt", None): # do not load if missing OR empty string
     #         model.load(config.params.embedding_manager_ckpt)
-        
+
     #     return model
 
     def _get_denoise_row_from_list(self, samples, desc='', force_no_decoder_quantization=False):
@@ -834,7 +834,7 @@ class LatentDiffusion(DDPM):
                 z = z.view((z.shape[0], -1, ks[0], ks[1], z.shape[-1]))  # (bn, nc, ks[0], ks[1], L )
 
                 # 2. apply model loop over last dim
-                if isinstance(self.first_stage_model, VQModelInterface):  
+                if isinstance(self.first_stage_model, VQModelInterface):
                     output_list = [self.first_stage_model.decode(z[:, :, :, :, i],
                                                                  force_not_quantize=predict_cids or force_not_quantize)
                                    for i in range(z.shape[-1])]
@@ -907,15 +907,18 @@ class LatentDiffusion(DDPM):
         x, c = self.get_input(batch, self.first_stage_key)
         loss = self(x, c)
         return loss
-    
+
     def training_step(self, batch, batch_idx):
-        train_batch = batch[0]
-        reg_batch = batch[1]
-        
-        loss_train, loss_dict = self.shared_step(train_batch)
-        loss_reg, _ = self.shared_step(reg_batch)
-        
-        loss = loss_train + self.reg_weight * loss_reg
+        if isinstance(batch, dict):
+            # No Reg dataset for the training
+            loss_train, loss_dict = self.shared_step(batch)
+            loss = loss_train
+        else:
+            train_batch = batch[0]
+            reg_batch = batch[1]
+            loss_train, loss_dict = self.shared_step(train_batch)
+            loss_reg, _ = self.shared_step(reg_batch)
+            loss = loss_train + self.reg_weight * loss_reg
 
         self.log_dict(loss_dict, prog_bar=True,
                       logger=True, on_step=True, on_epoch=True)
@@ -964,7 +967,7 @@ class LatentDiffusion(DDPM):
 
         if hasattr(self, "split_input_params"):
             assert len(cond) == 1  # todo can only deal with one conditioning atm
-            assert not return_ids  
+            assert not return_ids
             ks = self.split_input_params["ks"]  # eg. (128, 128)
             stride = self.split_input_params["stride"]  # eg. (64, 64)
 
@@ -1325,7 +1328,11 @@ class LatentDiffusion(DDPM):
         use_ddim = ddim_steps is not None
 
         log = dict()
-        batch = batch[0]
+        # We have a reg dataset, only pick the
+        # first dataset - the training one.
+        if not isinstance(batch, dict):
+            batch = batch[0]
+
         z, c, x, xrec, xc = self.get_input(batch, self.first_stage_key,
                                            return_first_stage_outputs=True,
                                            force_c_encode=True,

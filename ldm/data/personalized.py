@@ -35,35 +35,28 @@ class PersonalizedBase(Dataset):
                  size=None,
                  repeats=100,
                  interpolation="bicubic",
-                 flip_p=0.0,
+                 flip_p=0.5,
                  set="train",
                  placeholder_token="dog",
                  per_image_tokens=False,
                  center_crop=False,
                  mixing_prob=0.25,
                  coarse_class_text=None,
+                 token_only=False,
                  reg=False
                  ):
 
         self.data_root = data_root
 
-        print('=====================\tself.data_root', self.data_root)
-
-        #print('==============================>>>\tself.data_root', self.data_root)
-        #for img in os.listdir(self.data_root):
-        #    print('----->>>\timg', img)
-
-        self.image_paths = []
-        if '/' in self.data_root:
-            if len(os.listdir(self.data_root)) > 0:
-                self.image_paths = [os.path.join(self.data_root, img) for img in os.listdir(self.data_root)]
+        self.image_paths = [os.path.join(
+            self.data_root, file_path) for file_path in os.listdir(self.data_root)]
 
         # self._length = len(self.image_paths)
         self.num_images = len(self.image_paths)
         self._length = self.num_images
 
         self.placeholder_token = placeholder_token
-
+        self.token_only = token_only
         self.per_image_tokens = per_image_tokens
         self.center_crop = center_crop
         self.mixing_prob = mixing_prob
@@ -96,18 +89,14 @@ class PersonalizedBase(Dataset):
         if not image.mode == "RGB":
             image = image.convert("RGB")
 
-        placeholder_string = self.placeholder_token
-        if self.coarse_class_text:
-            placeholder_string = f"{self.coarse_class_text} {placeholder_string}"
-
-        if not self.reg:
-            text = random.choice(training_templates_smallest).format(
-                placeholder_string)
+        example["caption"] = ""
+        if self.reg and self.coarse_class_text:
+            example["caption"] = self.coarse_class_text
         else:
-            text = random.choice(reg_templates_smallest).format(
-                placeholder_string)
-
-        example["caption"] = text
+            example["caption"] = "{token}{coarse_class}".format(
+                token=self.placeholder_token,
+                coarse_class="" if self.token_only or not self.coarse_class_text else f" {self.coarse_class_text}"
+            )
 
         # default to score-sde preprocessing
         img = np.array(image).astype(np.uint8)

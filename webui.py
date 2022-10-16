@@ -5,6 +5,8 @@ import subprocess as sub
 import glob
 import json
 import torch
+import multiprocessing as mp
+from pathlib import Path
 
 # set local path
 cwd = os.getcwd()
@@ -61,6 +63,15 @@ def verbose_print(text):
     if "verbose" in model_config_df and model_config_df["verbose"]:
         print(f"{text}")
 
+def execute(cmd):
+    popen = sub.Popen(cmd, stdout=sub.PIPE, universal_newlines=True)
+    for stdout_line in iter(popen.stdout.readline, ""):
+        yield stdout_line
+    popen.stdout.close()
+    return_code = popen.wait()
+    if return_code:
+        raise sub.CalledProcessError(return_code, cmd)
+
 def dependency_install_button():
     return sub.run(f"pip install -r {cwd}/requirements.txt".split(" "), stdout=sub.PIPE).stdout.decode("utf-8")
 
@@ -90,27 +101,29 @@ def model_choice(ver):
 def verbose_checkbox():
     model_config_df["verbose"] = not model_config_df["verbose"]
 
-def model_config_save_button(model_name, gpu_used_var, project_name, class_word, config_path, dataset_path, reg_dataset_path):
+def model_config_save_button(model_name, gpu_used_var, project_name, class_token, config_path, dataset_path, reg_dataset_path):
     model_config_df["model_name"] = model_name
     system_config_df["gpu_used_var"] = int(gpu_used_var.replace("gpu: ", ""))
     dataset_config_df["project_name"] = project_name
-    dataset_config_df["class_word"] = class_word
+    dataset_config_df["class_token"] = class_token
     dataset_config_df["config_path"] = config_path
     dataset_config_df["dataset_path"] = dataset_path
     dataset_config_df["reg_dataset_path"] = reg_dataset_path
 
+    image_gen_config_df["final_img_path"] = dataset_config_df["reg_dataset_path"]
+
     all_lines = None
     is_target_same = False
-    if not dataset_config_df["project_name"] == '':
+    if not dataset_config_df["class_token"] == '':
         with open(os.path.join(cwd, "ldm/data/personalized.py"), "r") as script_file:
             lines = script_file.readlines()
             for i in range(0, len(lines)):
                 if "{}" in lines[i]:
                     prior_class = (lines[i].split("\'")[1]).split(" ")[0]
-                    if prior_class == dataset_config_df["project_name"]:
+                    if prior_class == dataset_config_df["class_token"]:
                         is_target_same = True
                         break
-                    lines[i] = lines[i].replace(prior_class, str(dataset_config_df["project_name"]))
+                    lines[i] = lines[i].replace(prior_class, str(dataset_config_df["class_token"]))
                     all_lines = lines
                     break
             script_file.close()
@@ -126,21 +139,26 @@ def model_config_save_button(model_name, gpu_used_var, project_name, class_word,
     # create directories if necessary
     create_data_dirs()
 
+    return reg_dataset_path
+
 def change_regularizer_view(choice):
     if "Custom" in choice:
         image_gen_config_df["regularizer_var"] = 0
     elif "Auto" in choice:
         image_gen_config_df["regularizer_var"] = 1
 
-def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_var, prompt_name, n_samples, n_iter, ddim_steps):
+def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, n_samples, n_iter, ddim_steps, keep_jpgs):
     image_gen_config_df["final_img_path"] = final_img_path
     image_gen_config_df["seed_var"] = int(seed_var)
     image_gen_config_df["ddim_eta_var"] = float(ddim_eta_var)
     image_gen_config_df["scale_var"] = float(scale_var)
-    image_gen_config_df["prompt_name"] = prompt_name
+    image_gen_config_df["prompt_string"] = prompt_string
     image_gen_config_df["n_samples"] = int(n_samples)
     image_gen_config_df["n_iter"] = int(n_iter)
     image_gen_config_df["ddim_steps"] = int(ddim_steps)
+    image_gen_config_df["keep_jpgs"] = bool(keep_jpgs)
+
+    dataset_config_df["reg_dataset_path"] = image_gen_config_df["final_img_path"]
 
     # update json file
     update_JSON()
@@ -148,26 +166,38 @@ def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_v
     # create directories if necessary
     create_data_dirs()
 
-    return image_gen_config_df["final_img_path"]
+    return final_img_path
 
-def image_generation_button():
-    prompt = image_gen_config_df['prompt_name'].replace('_', ' ')
-    image_gen_cmd = f"python scripts/stable_txt2img.py --seed {image_gen_config_df['seed_var']} --ddim_eta {image_gen_config_df['ddim_eta_var']} --n_samples {image_gen_config_df['n_samples']} --n_iter {image_gen_config_df['n_iter']} --scale {image_gen_config_df['scale_var']} --ddim_steps {image_gen_config_df['ddim_steps']} --ckpt {model_config_df['model_name']} --prompt \'{prompt}\' --outdir {image_gen_config_df['final_img_path']}"
+def image_generation_button(keep_jpgs):
+    prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
+    image_gen_cmd = f"python scripts/stable_txt2img.py --seed {image_gen_config_df['seed_var']} " \
+                    f"--ddim_eta {image_gen_config_df['ddim_eta_var']} --n_samples {image_gen_config_df['n_samples']} " \
+                    f"--n_iter {image_gen_config_df['n_iter']} --scale {image_gen_config_df['scale_var']} " \
+                    f"--ddim_steps {image_gen_config_df['ddim_steps']} --ckpt {model_config_df['model_name']} " \
+                    f"--prompt \'{prompt}\' --outdir {image_gen_config_df['final_img_path']}"
+
+    if keep_jpgs:
+        image_gen_cmd += " --keep_jpgs"
 
     verbose_print("============================== IMAGE GENERATION TEST ==============================")
     verbose_print(image_gen_cmd)
     verbose_print("============================== --------------------- ==============================")
 
     if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
-        if "seed_var" in image_gen_config_df and "ddim_eta_var" in image_gen_config_df and "n_samples" in image_gen_config_df and "n_iter" in image_gen_config_df and "scale_var" in image_gen_config_df and "ddim_steps" in image_gen_config_df and "model_name" in model_config_df and "prompt_name" in image_gen_config_df and "final_img_path" in image_gen_config_df:
-            return sub.run(image_gen_cmd.split(" "), stdout=sub.PIPE).stdout.decode('utf-8')
+        if "seed_var" in image_gen_config_df and "ddim_eta_var" in image_gen_config_df and \
+                "n_samples" in image_gen_config_df and "n_iter" in image_gen_config_df and \
+                "scale_var" in image_gen_config_df and "ddim_steps" in image_gen_config_df and \
+                "model_name" in model_config_df and "prompt_string" in image_gen_config_df and "final_img_path" in image_gen_config_df:
+            for line in execute(image_gen_cmd.split(" ")):
+                verbose_print(line)
     else:
-        return "Auto Regularization Method NOT Selected. Please Select the Correct Option to Generate (Regularization Images)\n" \
-               "Please make sure to SAVE your settings before trying to Generate and/or Train."
+        verbose_print("Auto Regularization Method NOT Selected. Please Select the Correct Option to Generate (Regularization Images)\n" \
+               "Please make sure to SAVE your settings before trying to Generate and/or Train.")
 
-def train_save_button(max_training_steps, batch_size):
-    train_config_df["max_training_steps"] = int(max_training_steps)
-    train_config_df["batch_size"] = int(batch_size)
+def train_save_button(max_training_steps, batch_size, cpu_workers):
+    train_config_df['max_training_steps'] = int(max_training_steps)
+    train_config_df['batch_size'] = int(batch_size)
+    train_config_df['cpu_workers'] = int(cpu_workers)
 
     # update json file
     update_JSON()
@@ -175,20 +205,42 @@ def train_save_button(max_training_steps, batch_size):
     # create directories if necessary
     create_data_dirs()
 
-def train_button():
+def prune_ckpt():
+    temp_path = os.path.join(cwd, 'logs')
+    paths = sorted(Path(temp_path).iterdir(), key=os.path.getmtime)
+    verbose_print(paths)
+    temp_path = os.path.join(temp_path, paths[-1])
+    temp_path = os.path.join(temp_path, 'checkpoints/last.ckpt')
+    verbose_print(temp_path)
+    prune_cmd = f"python prune-ckpt.py --ckpt {temp_path}"
+    execute(prune_cmd)
+    verbose_print(f"Model Pruning Complete!")
+
+def train_button(prune_model_var):
     # train the model
-    prompt = dataset_config_df['class_word'].replace('_', ' ')
-    train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} --reg_data_root {image_gen_config_df['final_img_path']} -n {dataset_config_df['project_name']} --gpus {system_config_df['gpu_used_var']}, --data_root {dataset_config_df['dataset_path']} --max_training_steps {train_config_df['max_training_steps']} --class_word {prompt} --no-test"
+    prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
+    train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} " \
+                f"--reg_data_root {image_gen_config_df['final_img_path']} -n {dataset_config_df['project_name']} " \
+                f"--gpus {system_config_df['gpu_used_var']}, --data_root {dataset_config_df['dataset_path']} " \
+                f"--max_training_steps {train_config_df['max_training_steps']} --class_word {prompt} --token {dataset_config_df['class_token']} " \
+                f"--no-test --batch_size {train_config_df['batch_size']} --workers {train_config_df['cpu_workers']}"
 
     verbose_print("============================== TRAINING COMMAND TEST ==============================")
     verbose_print(train_cmd)
     verbose_print("============================== --------------------- ==============================")
 
     if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
-        if 'config_path' in dataset_config_df and 'model_name' in model_config_df and 'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and 'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and 'max_training_steps' in train_config_df and prompt:
-            return sub.run(train_cmd.split(" "), stdout=sub.PIPE).stdout.decode('utf-8')
+        if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
+                'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
+                'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
+                'max_training_steps' in train_config_df and prompt:
+            for line in execute(train_cmd.split(" ")):
+                verbose_print(line)
     else:
-        return "Please make sure to SAVE your settings before trying to Generate and/or Train."
+        verbose_print("Please make sure to SAVE your settings before trying to Generate and/or Train.")
+
+    prune_model_var = gr.Button(value="Prune Model", variant='secondary', visible=True)
+    return prune_model_var
 
 with gr.Blocks() as demo:
     with gr.Tab("Model & Data Configuration"):
@@ -203,35 +255,35 @@ with gr.Blocks() as demo:
 
         with gr.Row():
             if "model_name" in model_config_df:
-                model_var = gr.inputs.Radio(ckpt_files, type="value", default=model_config_df["model_name"], label='Select Model')
+                model_var = gr.inputs.Radio(ckpt_files, type="value", default=str(model_config_df["model_name"]), label='Select Model')
             else:
                 model_var = gr.inputs.Radio(ckpt_files, type="value", label='Select Model')
 
         if "project_name" in dataset_config_df:
-            project_name = gr.Textbox(lines=1, interactive=True, label='Class Target Name', value=dataset_config_df["project_name"])
+            project_name = gr.Textbox(lines=1, interactive=True, label='Project Name', value=str(dataset_config_df["project_name"]))
         else:
-            project_name = gr.Textbox(lines=1, interactive=True, label='Class Target Name')
-        if "class_word" in dataset_config_df:
-            class_word = gr.Textbox(lines=1, interactive=True, label='Regularization Class Word or Prompt', value=dataset_config_df["class_word"])
+            project_name = gr.Textbox(lines=1, interactive=True, label='Project Name')
+        if "class_token" in dataset_config_df:
+            class_token = gr.Textbox(lines=1, interactive=True, label='Token (e.g. firstnamelastname)', value=str(dataset_config_df["class_token"]))
         else:
-            class_word = gr.Textbox(lines=1, interactive=True, label='Regularization Class Word or Prompt')
+            class_token = gr.Textbox(lines=1, interactive=True, label='Token (e.g. firstnamelastname)')
         if "config_path" in dataset_config_df:
-            config_path = gr.Textbox(lines=1, interactive=True, label='Path to Model YAML Config', value=dataset_config_df["config_path"])
+            config_path = gr.Textbox(lines=1, interactive=True, label='Path to Model YAML Config', value=str(dataset_config_df["config_path"]))
         else:
             config_path = gr.Textbox(lines=1, interactive=True, label='Path to Model YAML Config')
         if "dataset_path" in dataset_config_df:
-            dataset_path = gr.Textbox(lines=1, interactive=True, label='Path to Class Target Dataset', value=dataset_config_df["dataset_path"])
+            dataset_path = gr.Textbox(lines=1, interactive=True, label='Path to Class Target Dataset', value=str(dataset_config_df["dataset_path"]))
         else:
             dataset_path = gr.Textbox(lines=1, interactive=True, label='Path to Class Target Dataset')
         if "reg_dataset_path" in dataset_config_df:
-            reg_dataset_path = gr.Textbox(lines=1, interactive=True, label='Path to Regularization Dataset', value=dataset_config_df["reg_dataset_path"])
+            reg_dataset_path = gr.Textbox(lines=1, interactive=True, label='Path to Regularization Dataset', value=str(dataset_config_df["reg_dataset_path"]))
         else:
             reg_dataset_path = gr.Textbox(lines=1, interactive=True, label='Path to Regularization Dataset')
 
         with gr.Row():
             with gr.Column():
                 if "verbose" in model_config_df:
-                    verbose = gr.Checkbox(interactive=True, label='Verbose Mode', value=model_config_df["verbose"])
+                    verbose = gr.Checkbox(interactive=True, label='Verbose Mode', value=bool(model_config_df["verbose"]))
                 else:
                     model_config_df["verbose"] = False
                     verbose = gr.Checkbox(interactive=True, label='Verbose Mode', value=False)
@@ -240,20 +292,6 @@ with gr.Blocks() as demo:
                     system_config_df["gpu_used_var"] = [i for i in range(0, torch.cuda.device_count())][0] # EXPECT THIS TO CHANGE IN THE FUTURE
                 temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
                 gpu_used_var = gr.inputs.Radio(temp_text, default=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU')
-
-    model_var.change(fn=model_choice, inputs=[model_var], outputs=[])
-    config_save_var.click(fn=model_config_save_button,
-                          inputs=[model_var,
-                                  gpu_used_var,
-                                  project_name,
-                                  class_word,
-                                  config_path,
-                                  dataset_path,
-                                  reg_dataset_path
-                                  ],
-                          outputs=[]
-                          )
-    verbose.change(fn=verbose_checkbox, inputs=[], outputs=[])
 
     with gr.Tab("Image Regularization"):
         gr.Markdown(
@@ -271,15 +309,14 @@ with gr.Blocks() as demo:
             else:
                 regularizer_var = gr.inputs.Radio(reg_options,
                                 type="value", label='Select Regularization Approach')
-
             if not "final_img_path" in image_gen_config_df and not "reg_dataset_path" in dataset_config_df:
                 final_img_path = gr.Textbox(lines=1, interactive=True, label='Regularization Data Path')
             elif "reg_dataset_path" in dataset_config_df:
                 final_img_path = gr.Textbox(lines=1, interactive=True, label='Regularization Data Path',
-                                            value=dataset_config_df["reg_dataset_path"])
+                                            value=str(dataset_config_df["reg_dataset_path"]))
             elif "final_img_path" in image_gen_config_df:
                 final_img_path = gr.Textbox(lines=1, interactive=True, label='Regularization Data Path',
-                                            value=image_gen_config_df["final_img_path"])
+                                            value=str(image_gen_config_df["final_img_path"]))
 
         if "seed_var" in image_gen_config_df:
             seed_var = gr.Textbox(lines=1, interactive=True, label='Seed Number (int)', value=str(image_gen_config_df["seed_var"]))
@@ -293,15 +330,24 @@ with gr.Blocks() as demo:
             scale_var = gr.Textbox(lines=1, interactive=True, label='Scale (float)', value=str(image_gen_config_df["scale_var"]))
         else:
             scale_var = gr.Textbox(lines=1, interactive=True, label='Scale (float)', value=str(10.0))
-        if "prompt_name" in image_gen_config_df:
-            prompt_name = gr.Textbox(lines=1, interactive=True, label='Regularization Class Word or Prompt', value=image_gen_config_df["prompt_name"])
-        else:
-            prompt_name = gr.Textbox(lines=1, interactive=True, label='Regularization Class Word or Prompt')
+
+        with gr.Row():
+            with gr.Column():
+                if "prompt_string" in image_gen_config_df:
+                    prompt_string = gr.Textbox(lines=1, interactive=True, label='Regularization Prompt (e.g. Person)', value=str(image_gen_config_df["prompt_string"]))
+                else:
+                    prompt_string = gr.Textbox(lines=1, interactive=True, label='Regularization Prompt (e.g. Person)')
+            with gr.Column():
+                if "keep_jpgs" in image_gen_config_df:
+                    keep_jpgs = gr.Checkbox(interactive=True, label='Keep JPGs', value=bool(image_gen_config_df["keep_jpgs"]))
+                else:
+                    image_gen_config_df["keep_jpgs"] = False
+                    keep_jpgs = gr.Checkbox(interactive=True, label='Keep JPGs', value=False)
 
         if "n_samples" in image_gen_config_df:
-            n_samples = gr.Slider(minimum=0, maximum=200, step=1, label='Samples per Iteration', value=int(image_gen_config_df["n_samples"]))
+            n_samples = gr.Slider(minimum=0, maximum=200, step=1, label='Samples per Iteration (i.e. batch size)', value=int(image_gen_config_df["n_samples"]))
         else:
-            n_samples = gr.Slider(minimum=0, maximum=200, step=1, value=1, label='Samples per Iteration')
+            n_samples = gr.Slider(minimum=0, maximum=200, step=1, value=1, label='Samples per Iteration (i.e. batch size)')
         if "n_iter" in image_gen_config_df:
             n_iter = gr.Slider(minimum=0, maximum=1000, step=10, label='Number of Iterations', value=int(image_gen_config_df["n_iter"]))
         else:
@@ -314,18 +360,6 @@ with gr.Blocks() as demo:
         with gr.Row():
             generate_images_var = gr.Button(value="Generate", variant='secondary')
 
-    regularizer_var.change(fn=change_regularizer_view, inputs=[regularizer_var], outputs=[])
-    regularizer_save_var.click(fn=image_gen_config_save_button, inputs=[final_img_path,
-                                                                        seed_var,
-                                                                        ddim_eta_var,
-                                                                        scale_var,
-                                                                        prompt_name,
-                                                                        n_samples,
-                                                                        n_iter,
-                                                                        ddim_steps
-                                                                        ], outputs=[final_img_path])
-    generate_images_var.click(fn=image_generation_button, inputs=[], outputs=[], show_progress=True, scroll_to_output=True)
-
     with gr.Tab("Fine-Tuning Model"):
         fine_tine_save_var = gr.Button(value="Apply & Save Settings", variant='primary')
 
@@ -334,17 +368,52 @@ with gr.Blocks() as demo:
         else:
             max_training_steps = gr.Slider(minimum=0, maximum=20000, step=20, label='Max Training Steps', value=2000)
         if "batch_size" in train_config_df:
-            batch_size = gr.Slider(minimum=0, maximum=64, step=1, label='Batch Size', value=int(train_config_df["batch_size"]))
+            batch_size = gr.Slider(minimum=1, maximum=64, step=1, label='Batch Size', value=int(train_config_df["batch_size"]))
         else:
-            batch_size = gr.Slider(minimum=0, maximum=64, step=1, label='Batch Size', value=1)
+            batch_size = gr.Slider(minimum=1, maximum=64, step=1, label='Batch Size', value=1)
+        if "cpu_workers" in train_config_df:
+            cpu_workers = gr.Slider(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads', value=int(train_config_df["cpu_workers"]))
+        else:
+            cpu_workers = gr.Slider(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads', value=int(mp.cpu_count()/2))
 
         with gr.Row():
             train_out_var = gr.Button(value="Generate", variant='secondary')
+            prune_model_var = gr.Button(value="Prune Model", variant='secondary', visible=False)
+
+    model_var.change(fn=model_choice, inputs=[model_var], outputs=[])
+    config_save_var.click(fn=model_config_save_button,
+                          inputs=[model_var,
+                                  gpu_used_var,
+                                  project_name,
+                                  class_token,
+                                  config_path,
+                                  dataset_path,
+                                  reg_dataset_path
+                                  ],
+                          outputs=[final_img_path]
+                          )
+    verbose.change(fn=verbose_checkbox, inputs=[], outputs=[])
+
+    regularizer_var.change(fn=change_regularizer_view, inputs=[regularizer_var], outputs=[])
+    regularizer_save_var.click(fn=image_gen_config_save_button, inputs=[final_img_path,
+                                                                        seed_var,
+                                                                        ddim_eta_var,
+                                                                        scale_var,
+                                                                        prompt_string,
+                                                                        n_samples,
+                                                                        n_iter,
+                                                                        ddim_steps,
+                                                                        keep_jpgs
+                                                                        ], outputs=[reg_dataset_path])
+
+    generate_images_var.click(fn=image_generation_button, inputs=[keep_jpgs], outputs=[], show_progress=True, scroll_to_output=True)
 
     fine_tine_save_var.click(fn=train_save_button, inputs=[max_training_steps,
-                                                                        batch_size
+                                                                        batch_size,
+                                                                        cpu_workers
                                                                         ], outputs=[])
-    train_out_var.click(fn=train_button, inputs=[], outputs=[], show_progress=True, scroll_to_output=True)
+    train_out_var.click(fn=train_button, inputs=[prune_model_var], outputs=[prune_model_var], show_progress=True, scroll_to_output=True)
+    prune_model_var.click(fn=prune_ckpt, inputs=[], outputs=[])
 
 if __name__ == "__main__":
     demo.launch()

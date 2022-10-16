@@ -1,9 +1,11 @@
 import argparse, os, sys, datetime, glob, importlib, csv
+from ldm.modules.pruningckptio import PruningCheckpointIO
 import numpy as np
 import time
+import torch
 
 import pytorch_lightning.loggers
-import torch
+import multiprocessing as mp
 
 import torchvision
 import pytorch_lightning as pl
@@ -20,14 +22,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateM
 from pytorch_lightning.utilities.distributed import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 
-from pytorch_lightning.loggers import CSVLogger
-
 from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config
-
-
-
-import matplotlib.pyplot as plt
 
 ## Un-comment this for windows
 ## os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
@@ -160,40 +156,67 @@ def get_parser(**parser_kwargs):
     parser.add_argument(
         "--max_training_steps",
         type=int,
-        required=False,
-        default=1000,
-        help="Number of iterations to run")
+        required=True,
+        help="Number of training steps to run")
 
-    parser.add_argument("--actual_resume", 
+    parser.add_argument(
+        "--token",
         type=str,
         required=True,
-        help="Path to model to actually resume from")
+        help="Unique token you want to represent your trained model. Ex: firstNameLastName.")
 
-    parser.add_argument("--data_root", 
-        type=str, 
-        required=True, 
-        help="Path to directory with training images")
-    
-    parser.add_argument("--reg_data_root", 
-        type=str, 
-        required=True, 
-        help="Path to directory with regularization images")
+    parser.add_argument("--token_only",
+                        type=str2bool,
+                        const=True,
+                        default=False,
+                        nargs="?",
+                        help="Train only using the token and no class.")
 
-    parser.add_argument("--embedding_manager_ckpt", 
-        type=str, 
-        default="", 
-        help="Initialize embedding manager from a checkpoint")
+    parser.add_argument("--actual_resume",
+                        type=str,
+                        required=True,
+                        help="Path to model to actually resume from")
 
-    parser.add_argument("--class_word", 
-        type=str, 
-        default="dog",
-        help="Placeholder token which will be used to denote the concept in future prompts")
+    parser.add_argument("--data_root",
+                        type=str,
+                        required=True,
+                        help="Path to directory with training images")
 
-    parser.add_argument("--init_word", 
-        type=str, 
-        help="Word to use as source for initial token embedding")
+    parser.add_argument("--reg_data_root",
+                        type=str,
+                        required=False,
+                        help="Path to directory with regularization images")
+
+    parser.add_argument("--embedding_manager_ckpt",
+                        type=str,
+                        default="",
+                        help="Initialize embedding manager from a checkpoint")
+
+    parser.add_argument("--class_word",
+                        type=str,
+                        required=False,
+                        help="Match class_word to the category of images you want to train. Example: 'man', 'woman', or 'dog'.")
+
+    parser.add_argument("--init_words",
+                        type=str,
+                        help="Comma separated list of words used to initialize the embeddings for training.")
+
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        required=False,
+        help="Amount of images on each pass")
+
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=int(mp.cpu_count()/2),
+        required=False,
+        help="Amount of allocated cpu thread workers. Uses (half the available cores by default)")
 
     return parser
+
+
 
 
 def nondefault_trainer_args(opt):
@@ -240,25 +263,32 @@ class ConcatDataset(Dataset):
 
     def __len__(self):
         return min(len(d) for d in self.datasets)
-    
+
 class DataModuleFromConfig(pl.LightningDataModule):
-    def __init__(self, batch_size, train=None, reg = None, validation=None, test=None, predict=None,
+    def __init__(self, batch_size, train=None, reg=None, validation=None, test=None, predict=None,
                  wrap=False, num_workers=None, shuffle_test_loader=False, use_worker_init_fn=False,
                  shuffle_val_dataloader=False):
         super().__init__()
-        self.batch_size = 2#4#8#batch_size
-        self.dataset_configs = dict()
-        self.num_workers = 64#num_workers if num_workers is not None else batch_size * 2
 
+        if not opt.batch_size:
+            self.batch_size = batch_size
+        else:
+            self.batch_size = opt.batch_size
+
+        self.dataset_configs = dict()
+        self.num_workers = opt.workers
+
+        print('self.batch_size', self.batch_size)
+        print('self.num_workers', self.num_workers)
 
         self.use_worker_init_fn = use_worker_init_fn
         if train is not None:
             self.dataset_configs["train"] = train
         if reg is not None:
             self.dataset_configs["reg"] = reg
-        
+
         self.train_dataloader = self._train_dataloader
-        
+
         if validation is not None:
             self.dataset_configs["validation"] = validation
             self.val_dataloader = partial(self._val_dataloader, shuffle=shuffle_val_dataloader)
@@ -282,21 +312,26 @@ class DataModuleFromConfig(pl.LightningDataModule):
             for k in self.datasets:
                 self.datasets[k] = WrappedDataset(self.datasets[k])
 
+
+
+
     def _train_dataloader(self):
         is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
         if is_iterable_dataset or self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
             init_fn = None
-        train_set = self.datasets["train"]
-        reg_set = self.datasets["reg"]
-        concat_dataset = ConcatDataset(train_set, reg_set)
 
-        print(f"concat_dataset %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\t{concat_dataset}")
+        train_set = self.datasets["train"]
+        if 'reg' in self.datasets:
+            reg_set = self.datasets["reg"]
+            train_set = ConcatDataset(train_set, reg_set)
+
+            print(f"concat_dataset %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\t{train_set}")
         print(f"self.batch_size %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\t{self.batch_size}")
         print(f"self.num_workers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\t{self.num_workers}")
 
-        return DataLoader(concat_dataset, batch_size=self.batch_size,
+        return DataLoader(train_set, batch_size=self.batch_size,
                           num_workers=self.num_workers, shuffle=False if is_iterable_dataset else True,
                           worker_init_fn=init_fn)
 
@@ -392,7 +427,7 @@ class ImageLogger(Callback):
         self.max_images = max_images
         self.logger_log_images = {
             pytorch_lightning.loggers.CSVLogger: self._testtube,
-        }#NeptuneLogger
+        }
         self.log_steps = [2 ** n for n in range(int(np.log2(self.batch_freq)) + 1)]
         if not increase_log_steps:
             self.log_steps = [self.batch_freq]
@@ -557,7 +592,7 @@ class ImageLogger(Callback):
                            pl_module.global_step, pl_module.current_epoch, batch_idx)
 
             logger_log_images = self.logger_log_images.get(logger, lambda *args, **kwargs: None)
-            logger_log_images(pl_module, images, pl_module.global_step, split)###########################################################################
+            logger_log_images(pl_module, images, pl_module.global_step, split)
 
             if is_train:
                 pl_module.train()
@@ -574,19 +609,6 @@ class ImageLogger(Callback):
         return False
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):#, dataloader_idx):
-        #print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
-        #print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
-        #print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
-        #print(f"trainer\t\t{trainer}")
-        #print(f"pl_module\t\t{pl_module}")
-        #########################################################print(f"outputs\t\t{outputs}")####################################### I DO WANT TO SEE THE MODEL LOSS FOR ---- NEW DATASETS
-        #print(f"batch\t\t{batch}")
-        #print(f"batch_idx\t\t{batch_idx}")
-        #print(f"dataloader_idx\t\t{dataloader_idx}")
-        #print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
-        #print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
-        #print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
-
         if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
             self.log_img(pl_module, batch, batch_idx, split="train")
 
@@ -693,17 +715,17 @@ if __name__ == "__main__":
 
     parser = get_parser()
 
-
-    #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-    #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-    #print(parser.parse_args())
-    #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-    #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-
-
     parser = Trainer.add_argparse_args(parser)
 
+    global opt
     opt, unknown = parser.parse_known_args()
+
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+    print(opt)
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+
     if opt.name and opt.resume:
         raise ValueError(
             "-n/--name and -r/--resume cannot be specified both."
@@ -741,7 +763,7 @@ if __name__ == "__main__":
 
         if opt.datadir_in_name:
             now = os.path.basename(os.path.normpath(opt.data_root)) + now
-            
+
         nowname = now + name + opt.postfix
         logdir = os.path.join(opt.logdir, nowname)
 
@@ -760,11 +782,14 @@ if __name__ == "__main__":
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
 
         print(f"@@@@@@@@@@@@@@@@@@@@@@@---BEFORE   ====================================================================opt.max_training_steps\t{opt.max_training_steps}")
-        opt.max_training_steps = 2000
-        print(f"@@@@@@@@@@@@@@@@@@@@@@@---AFTER   ====================================================================opt.max_training_steps\t{opt.max_training_steps}")
+        #opt.max_training_steps = 2000
+        #print(f"@@@@@@@@@@@@@@@@@@@@@@@---AFTER   ====================================================================opt.max_training_steps\t{opt.max_training_steps}")
 
         # Set the steps
-        trainer_config.max_steps = 2000
+        #trainer_config.max_steps = 2000
+        trainer_config.max_steps = opt.max_training_steps
+
+        print(f"@@@@@@@@@@@@@@@@@@@@@@@---BEFORE   ====================================================================opt.max_training_steps\t{trainer_config.max_steps}")
 
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
@@ -789,18 +814,32 @@ if __name__ == "__main__":
         trainer_opt = argparse.Namespace(**trainer_config)
         lightning_config.trainer = trainer_config
 
-        # model
-
-        # config.model.params.personalization_config.params.init_word = opt.init_word
-        # config.model.params.personalization_config.params.embedding_manager_ckpt = opt.embedding_manager_ckpt
-        # config.model.params.personalization_config.params.placeholder_tokens = opt.placeholder_tokens
+        if opt.init_words:
+            config.model.params.personalization_config.params.initializer_words = [
+                    init_word.strip() for init_word in opt.init_words.split(',')
+                ]
 
         # if opt.init_word:
         #     config.model.params.personalization_config.params.initializer_words[0] = opt.init_word
-            
-        config.data.params.train.params.placeholder_token = opt.class_word
-        config.data.params.reg.params.placeholder_token = opt.class_word
-        config.data.params.validation.params.placeholder_token = opt.class_word
+
+        # Setup the token and class word to get passed to personalized.py
+        if not opt.reg_data_root:
+            config.data.params.reg = None
+        else:
+            config.data.params.reg.params.data_root = opt.reg_data_root
+            config.data.params.reg.params.coarse_class_text = opt.class_word
+            config.data.params.reg.params.placeholder_token = opt.token
+
+        if opt.class_word:
+            config.data.params.train.params.coarse_class_text = opt.class_word
+            config.data.params.validation.params.coarse_class_text = opt.class_word
+
+        config.data.params.train.params.data_root = opt.data_root
+        config.data.params.train.params.placeholder_token = opt.token
+        config.data.params.train.params.token_only = opt.token_only or not opt.class_word
+
+        config.data.params.validation.params.placeholder_token = opt.token
+        config.data.params.validation.params.data_root = opt.data_root
 
         if opt.actual_resume:
             model = load_model_from_config(config, opt.actual_resume)
@@ -828,7 +867,7 @@ if __name__ == "__main__":
                     "save_dir": logdir,
                 }
             },
-        }#NeptuneLogger
+        }
         default_logger_cfg = default_logger_cfgs["testtube"]
         if "logger" in lightning_config:
             logger_cfg = lightning_config.logger
@@ -929,17 +968,13 @@ if __name__ == "__main__":
 
         trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
         trainer_kwargs["max_steps"] = trainer_opt.max_steps
+        trainer_kwargs["plugins"] = PruningCheckpointIO()
 
         trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
         trainer.logdir = logdir  ###
 
-        # data
-        config.data.params.train.params.data_root = opt.data_root
-        config.data.params.reg.params.data_root = opt.reg_data_root
-        config.data.params.validation.params.data_root = opt.data_root
         data = instantiate_from_config(config.data)
 
-        data = instantiate_from_config(config.data)
         # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
         # calling these ourselves should not be necessary but it is.
         # lightning still takes care of proper multiprocessing though
@@ -953,7 +988,6 @@ if __name__ == "__main__":
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
         if not cpu:
             ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
-            print(f"[]]]][][][][][[]][][][[[[[[[[[[[[[[[[[[[[[[[[[[[[][]][][][][][][][][][][][\t {ngpu}")
         else:
             ngpu = 1
         if 'accumulate_grad_batches' in lightning_config.trainer:
@@ -990,12 +1024,11 @@ if __name__ == "__main__":
 
         import signal
 
-
         # Changed to work with windows
         signal.signal(signal.SIGTERM, melk)
-        #signal.signal(signal.SIGUSR1, melk)
+        # signal.signal(signal.SIGUSR1, melk)
         signal.signal(signal.SIGTERM, divein)
-        #signal.signal(signal.SIGUSR2, divein)
+        # signal.signal(signal.SIGUSR2, divein)
 
         # run
         if opt.train:
