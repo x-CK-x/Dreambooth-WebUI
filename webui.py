@@ -31,7 +31,7 @@ else:
     data_flag = True
     with open(json_file_name, 'r') as json_file:
         lines = json_file.readlines()
-        if len(lines[0].replace(' ', '')) == 0:
+        if len(lines) == 0 or len(lines[0].replace(' ', '')) == 0:
             data_flag = False
         json_file.close()
 
@@ -214,13 +214,14 @@ def train_save_button(max_training_steps, batch_size, cpu_workers, model_path):
     # create directories if necessary
     create_data_dirs()
 
-def train_resume_checkbox():
-    model_path_var = None
-    if 'model_path' in train_config_df:
-        model_path_var = gr.Textbox(label='Path to ckpt model in logs directory', value=str(train_config_df['model_path']), visible=True)
+def train_resume_checkbox(checkbox):
+    if checkbox:
+        if 'model_path' in train_config_df:
+            return gr.update(label='Path to ckpt model in logs directory', value=str(train_config_df['model_path']), visible=True, interactive=True)
+        else:
+            return gr.update(label='Path to ckpt model in logs directory', visible=True, interactive=True)
     else:
-        model_path_var = gr.Textbox(label='Path to ckpt model in logs directory', visible=True)
-    return model_path_var
+        return gr.update(visible=False)
 def prune_ckpt():
     temp_path = os.path.join(cwd, 'logs')
     paths = sorted(Path(temp_path).iterdir(), key=os.path.getmtime)
@@ -235,7 +236,7 @@ def prune_ckpt():
     execute(prune_cmd)
     verbose_print(f"Model Pruning Complete!")
 
-def train_button(train_resume_var):
+def train_button(train_resume_var, prune_model_var):
     # train the model
     prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
     train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} " \
@@ -261,8 +262,7 @@ def train_button(train_resume_var):
     else:
         verbose_print("Please make sure to SAVE your settings before trying to Generate and/or Train.")
 
-    prune_model_var = gr.Button(value="Prune Model", variant='secondary', visible=True)
-    return prune_model_var
+    return gr.update(value="Prune Model", variant='secondary', visible=True)
 
 with gr.Blocks() as demo:
     with gr.Tab("Model & Data Configuration"):
@@ -400,7 +400,7 @@ with gr.Blocks() as demo:
 
         with gr.Row():
             train_out_var = gr.Button(value="Generate", variant='secondary')
-            prune_model_var = gr.Button(value="Prune Model", variant='secondary', visible=False)
+            prune_model_var = gr.Button(visible=False)
 
         with gr.Accordion("Trying to Resume Training?? (Look Here!)"):
             gr.Markdown(
@@ -409,7 +409,7 @@ with gr.Blocks() as demo:
                 """)
             with gr.Row():
                 train_resume_var = gr.Checkbox(interactive=True, label='Resume Training', value=False)
-                model_path_var = gr.Textbox(label='Path to ckpt model in logs directory', visible=False)
+                model_path_var = gr.Textbox(visible=False)
 
     model_var.change(fn=model_choice, inputs=[model_var], outputs=[])
     config_save_var.click(fn=model_config_save_button,
@@ -446,7 +446,7 @@ with gr.Blocks() as demo:
                                                                         ], outputs=[])
     train_out_var.click(fn=train_button, inputs=[train_resume_var], outputs=[prune_model_var], show_progress=True, scroll_to_output=True)
     prune_model_var.click(fn=prune_ckpt, inputs=[], outputs=[])
-    train_resume_var.change(fn=train_resume_checkbox, inputs=[], outputs=[model_path_var])
+    train_resume_var.change(fn=train_resume_checkbox, inputs=[train_resume_var], outputs=[model_path_var])
 
 if __name__ == "__main__":
     demo.launch()
