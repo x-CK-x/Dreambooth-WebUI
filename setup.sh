@@ -22,3 +22,4 @@ conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch -y
 pip install pytorch-lightning==1.7.6
 pip install clip
 export MKL_SERVICE_FORCE_INTEL=1
+pip install mistune==0.8.4
