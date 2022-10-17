@@ -24,13 +24,16 @@ Please make sure to install python: [Python Official Website](https://www.python
 ### Additional planned features:
 - [X] The Pruning Feature from the repo (12GB to 2GB)
 - [X] Resolve Gradio Components not updating Components for real-time logging feed
-- [X] Insert support for jupyter notebook & google colab
-- [ ] Add model resume training from checkpoint
+- [ ] Insert support for jupyter notebook & google colab
+    - [X] Notebook finished & tested successfully
+    - [ ] Adding [https://github.com/localtunnel/localtunnel](https://github.com/localtunnel/localtunnel) to view the GUI from browser if using a cloud computing instance 
+- [X] Add model resume training from checkpoint
 - [ ] Add realtime graphs for tracking loss & other metrics
 - [ ] A Training Job Scheduler
 - [ ] Progress Bar for image generation & training
 - [ ] An Advanced Image Cropping Tool using YOLOv7
 - [ ] Multi-GPU support:
-    - Model Parallelism
+    - [ ] Model Parallelism
+    - [ ] Data Parallelism
 - [ ] Utilizing Other Sampling Algorithms
 - [ ] Windows Support
