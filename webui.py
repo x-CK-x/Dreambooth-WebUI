@@ -28,36 +28,44 @@ if not file_exists:
     with open(json_file_name, 'w') as f:
         f.close()
 else:
-    with open(json_file_name) as json_file:
-        data = json.load(json_file)
-
-        model_config_df = [dictionary for dictionary in data if "model_name" in dictionary]
-        if len(model_config_df) > 0:
-            model_config_df = model_config_df[0]
-        else:
-            model_config_df = {}
-        dataset_config_df = [dictionary for dictionary in data if "config_path" in dictionary]
-        if len(dataset_config_df) > 0:
-            dataset_config_df = dataset_config_df[0]
-        else:
-            dataset_config_df = {}
-        system_config_df = [dictionary for dictionary in data if "gpu_used_var" in dictionary]
-        if len(system_config_df) > 0:
-            system_config_df = system_config_df[0]
-        else:
-            system_config_df = {}
-        image_gen_config_df = [dictionary for dictionary in data if "ddim_eta_var" in dictionary]
-        if len(image_gen_config_df) > 0:
-            image_gen_config_df = image_gen_config_df[0]
-        else:
-            image_gen_config_df = {}
-        train_config_df = [dictionary for dictionary in data if "max_training_steps" in dictionary]
-        if len(train_config_df) > 0:
-            train_config_df = train_config_df[0]
-        else:
-            train_config_df = {}
-        del data
+    data_flag = True
+    with open(json_file_name, 'r') as json_file:
+        lines = json_file.readlines()
+        if len(lines[0].replace(' ', '')) == 0:
+            data_flag = False
         json_file.close()
+
+    if data_flag:
+        with open(json_file_name) as json_file:
+            data = json.load(json_file)
+
+            model_config_df = [dictionary for dictionary in data if "model_name" in dictionary]
+            if len(model_config_df) > 0:
+                model_config_df = model_config_df[0]
+            else:
+                model_config_df = {}
+            dataset_config_df = [dictionary for dictionary in data if "config_path" in dictionary]
+            if len(dataset_config_df) > 0:
+                dataset_config_df = dataset_config_df[0]
+            else:
+                dataset_config_df = {}
+            system_config_df = [dictionary for dictionary in data if "gpu_used_var" in dictionary]
+            if len(system_config_df) > 0:
+                system_config_df = system_config_df[0]
+            else:
+                system_config_df = {}
+            image_gen_config_df = [dictionary for dictionary in data if "ddim_eta_var" in dictionary]
+            if len(image_gen_config_df) > 0:
+                image_gen_config_df = image_gen_config_df[0]
+            else:
+                image_gen_config_df = {}
+            train_config_df = [dictionary for dictionary in data if "max_training_steps" in dictionary]
+            if len(train_config_df) > 0:
+                train_config_df = train_config_df[0]
+            else:
+                train_config_df = {}
+            del data
+            json_file.close()
 
 def verbose_print(text):
     if "verbose" in model_config_df and model_config_df["verbose"]:
