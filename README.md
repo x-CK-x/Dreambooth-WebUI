@@ -24,7 +24,7 @@ Please make sure to install python: [Python Official Website](https://www.python
 ### Additional planned features:
 - [X] The Pruning Feature from the repo (12GB to 2GB)
 - [X] Resolve Gradio Components not updating Components for real-time logging feed
-- [ ] Insert support for jupyter notebook & google colab
+- [X] Insert support for jupyter notebook & google colab
 - [ ] Add model resume training from checkpoint
 - [ ] Add realtime graphs for tracking loss & other metrics
 - [ ] A Training Job Scheduler
