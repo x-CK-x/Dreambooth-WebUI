@@ -206,6 +206,11 @@ def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_v
     return final_img_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", interactive=True, value=[False for name in sub_dir_names])
 
 def image_generation_button(keep_jpgs):
+    # supress MKL_SERVICE_FORCE_INTEL warning
+    warn_cmd = f"export MKL_SERVICE_FORCE_INTEL=1"
+    for line in execute(warn_cmd.split(" ")):
+        verbose_print(line)
+
     prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
     image_gen_cmd = f"python scripts/stable_txt2img.py --seed {image_gen_config_df['seed_var']} " \
                     f"--ddim_eta {image_gen_config_df['ddim_eta_var']} --n_samples {image_gen_config_df['n_samples']} " \
@@ -278,6 +283,11 @@ def prune_ckpt():
     verbose_print(f"Model Pruning Complete!")
 
 def train_button(train_resume_var):
+    # supress MKL_SERVICE_FORCE_INTEL warning
+    warn_cmd = f"export MKL_SERVICE_FORCE_INTEL=1"
+    for line in execute(warn_cmd.split(" ")):
+        verbose_print(line)
+
     # train the model
     prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
     train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} " \
