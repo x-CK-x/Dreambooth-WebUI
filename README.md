@@ -28,6 +28,7 @@ Please make sure to install python: [Python Official Website](https://www.python
     - [X] Notebook finished & tested successfully
     - [ ] Adding [https://github.com/localtunnel/localtunnel](https://github.com/localtunnel/localtunnel) to view the GUI from browser if using a cloud computing instance 
 - [X] Add model resume training from checkpoint
+- [X] Merge multiple datasets into one
 - [ ] Add realtime graphs for tracking loss & other metrics
 - [ ] A Training Job Scheduler
 - [ ] Progress Bar for image generation & training

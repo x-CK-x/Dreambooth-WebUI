@@ -1,3 +1,5 @@
+import shutil
+
 import gradio as gr
 import os
 import sys
@@ -7,6 +9,21 @@ import json
 import torch
 import multiprocessing as mp
 from pathlib import Path
+
+def verbose_print(text):
+    if "verbose" in model_config_df and model_config_df["verbose"]:
+        print(f"{text}")
+
+def update_merged_dirs():
+    temp_merge_dirs = []
+    if ("dataset_path" in dataset_config_df) and (not dataset_config_df["dataset_path"] == ''):
+        all_files = os.listdir(dataset_config_df["dataset_path"])
+        for path in all_files:
+            path = os.path.join(str(dataset_config_df["dataset_path"]), path)
+            if os.path.isdir(path):
+                verbose_print(f'sub-directory:\t{path}')
+                temp_merge_dirs.append(path)
+    return temp_merge_dirs
 
 # set local path
 cwd = os.getcwd()
@@ -67,9 +84,8 @@ else:
             del data
             json_file.close()
 
-def verbose_print(text):
-    if "verbose" in model_config_df and model_config_df["verbose"]:
-        print(f"{text}")
+dataset_merge_dirs = update_merged_dirs()
+verbose_print(dataset_merge_dirs)
 
 def execute(cmd):
     popen = sub.Popen(cmd, stdout=sub.PIPE, universal_newlines=True)
@@ -91,6 +107,7 @@ def update_JSON():
     with open(json_file_name, "w") as f:
         json.dump([model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df], indent=4, fp=f)
     f.close()
+    verbose_print("="*42)
 
 def create_data_dirs():
     dataset_type = ["dataset_path", "reg_dataset_path"]
@@ -147,7 +164,13 @@ def model_config_save_button(model_name, gpu_used_var, project_name, class_token
     # create directories if necessary
     create_data_dirs()
 
-    return reg_dataset_path
+    # update merged dirs list
+    dataset_merge_dirs = update_merged_dirs()
+
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    verbose_print(f'subdirs:\t{sub_dir_names}')
+
+    return reg_dataset_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", interactive=True, value=[False for name in sub_dir_names])
 
 def change_regularizer_view(choice):
     if "Custom" in choice:
@@ -174,7 +197,13 @@ def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_v
     # create directories if necessary
     create_data_dirs()
 
-    return final_img_path
+    # update merged dirs list
+    dataset_merge_dirs = update_merged_dirs()
+
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    verbose_print(f'subdirs:\t{sub_dir_names}')
+
+    return final_img_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", interactive=True, value=[False for name in sub_dir_names])
 
 def image_generation_button(keep_jpgs):
     prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
@@ -199,20 +228,32 @@ def image_generation_button(keep_jpgs):
             for line in execute(image_gen_cmd.split(" ")):
                 verbose_print(line)
     else:
-        verbose_print("Auto Regularization Method NOT Selected. Please Select the Correct Option to Generate (Regularization Images)\n" \
-               "Please make sure to SAVE your settings before trying to Generate and/or Train.")
+        if "seed_var" in image_gen_config_df and "ddim_eta_var" in image_gen_config_df and \
+                "n_samples" in image_gen_config_df and "n_iter" in image_gen_config_df and \
+                "scale_var" in image_gen_config_df and "ddim_steps" in image_gen_config_df and \
+                "model_name" in model_config_df and "prompt_string" in image_gen_config_df and "final_img_path" in image_gen_config_df:
+            for line in execute(image_gen_cmd.split(" ")):
+                verbose_print(line)
 
 def train_save_button(max_training_steps, batch_size, cpu_workers, model_path):
     train_config_df['max_training_steps'] = int(max_training_steps)
     train_config_df['batch_size'] = int(batch_size)
     train_config_df['cpu_workers'] = int(cpu_workers)
-    train_config_df['model_path'] = model_path if (model_path and not model_path == '') else image_gen_config_df['model_path']
+    train_config_df['model_path'] = model_path if (model_path and not model_path == '') else None if (not 'model_path' in image_gen_config_df) else (image_gen_config_df['model_path'])
 
     # update json file
     update_JSON()
 
     # create directories if necessary
     create_data_dirs()
+
+    # update merged dirs list
+    dataset_merge_dirs = update_merged_dirs()
+
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    verbose_print(f'subdirs:\t{sub_dir_names}')
+
+    return gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", interactive=True, value=[False for name in sub_dir_names])
 
 def train_resume_checkbox(checkbox):
     if checkbox:
@@ -236,7 +277,7 @@ def prune_ckpt():
     execute(prune_cmd)
     verbose_print(f"Model Pruning Complete!")
 
-def train_button(train_resume_var, prune_model_var):
+def train_button(train_resume_var):
     # train the model
     prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
     train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} " \
@@ -260,9 +301,58 @@ def train_button(train_resume_var, prune_model_var):
             for line in execute(train_cmd.split(" ")):
                 verbose_print(line)
     else:
-        verbose_print("Please make sure to SAVE your settings before trying to Generate and/or Train.")
+        if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
+                'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
+                'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
+                'max_training_steps' in train_config_df and prompt:
+            for line in execute(train_cmd.split(" ")):
+                verbose_print(line)
 
     return gr.update(value="Prune Model", variant='secondary', visible=True)
+
+
+def merge_data_button(merge_data_list_var):
+    global dataset_merge_dirs
+
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    verbose_print(f'sub_dir_names:\t{sub_dir_names}')
+
+    # remove the booleans
+    merge_data_list_var = list(filter(lambda x:not(type(x) is bool), merge_data_list_var))
+
+    temp_list = [False]*len(dataset_merge_dirs)
+    for element in merge_data_list_var:
+        temp_list[sub_dir_names.index(element)] = True
+    merge_data_list_var = temp_list
+
+    paths_to_merge = []
+    for i in range(0, len(merge_data_list_var)):
+        if merge_data_list_var[i]:
+            paths_to_merge.append(dataset_merge_dirs[i])
+
+    verbose_print(f'directories to merge:\t{paths_to_merge}')
+
+    # loop for all sub-folders
+    for sub_dir_path in paths_to_merge:
+        ### count total in base dataset_path
+        total = len(glob.glob1(str(dataset_config_df["dataset_path"]), "*.png"))
+        ### get images from sub-dir
+        images_list = glob.glob1(sub_dir_path, "*.png")
+        ### move images from each sub-dir into the dataset_path
+        counter = total
+        for image in images_list:
+            original_image_path = os.path.join(sub_dir_path, image)
+            os.rename(original_image_path, os.path.join(str(dataset_config_df["dataset_path"]), f"{counter}.png"))
+            counter += 1
+        verbose_print(f'Done Merging {sub_dir_path} into {dataset_config_df["dataset_path"]}')
+        ### delete redundant directory
+        shutil.rmtree(sub_dir_path, ignore_errors=True)
+
+    # update merged dirs list
+    dataset_merge_dirs = update_merged_dirs()
+
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    return gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", interactive=True, value=[False for name in sub_dir_names])
 
 with gr.Blocks() as demo:
     with gr.Tab("Model & Data Configuration"):
@@ -399,17 +489,27 @@ with gr.Blocks() as demo:
             cpu_workers = gr.Slider(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads', value=int(mp.cpu_count()/2))
 
         with gr.Row():
-            train_out_var = gr.Button(value="Generate", variant='secondary')
+            train_out_var = gr.Button(value="Train", variant='secondary')
             prune_model_var = gr.Button(visible=False)
 
-        with gr.Accordion("Trying to Resume Training?? (Look Here!)"):
+        with gr.Accordion("Trying to Resume Training? OR Merge Data Directories? (Look Here!)"):
             gr.Markdown(
                 """
-                ### Make sure a you have the full checkpoint directory in the ( logs ) directory
+                ### Make sure a you have the full checkpoint directory in the ( logs ) directory :: if resuming training
+                ### Make sure to check all sub-directories you want merged within the path of your data directory
+                ### ( IMPORTANT ) if merging, be aware that the data merged is (not copied); please back up sub-directories if you want to keep their contents!
+                ### ( EVEN MORE IMPORTANT ) make sure that if merging sub-directories, that there is no left over data still in the current dataset_path. In other words make sure images are in some kind of sub-directory. (otherwise data could be overwritten!)
+                ### To refresh the list of sub-directories (checkboxes) after merging, then go to the first tab in the UI and click ( APPLY SETTINGS )
                 """)
             with gr.Row():
                 train_resume_var = gr.Checkbox(interactive=True, label='Resume Training', value=False)
                 model_path_var = gr.Textbox(visible=False)
+            with gr.Row():
+                with gr.Row():
+                    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+                    merge_data_list_var = gr.CheckboxGroup(choices=sub_dir_names, label="Dataset Sub-Directories", interactive=True, value=[False for name in sub_dir_names])
+                with gr.Row():
+                    merge_data_button_var = gr.Button(value="Merge All Data Sub-Directories", variant='secondary')
 
     model_var.change(fn=model_choice, inputs=[model_var], outputs=[])
     config_save_var.click(fn=model_config_save_button,
@@ -421,7 +521,7 @@ with gr.Blocks() as demo:
                                   dataset_path,
                                   reg_dataset_path
                                   ],
-                          outputs=[final_img_path]
+                          outputs=[final_img_path, merge_data_list_var]
                           )
     verbose.change(fn=verbose_checkbox, inputs=[], outputs=[])
 
@@ -435,7 +535,7 @@ with gr.Blocks() as demo:
                                                                         n_iter,
                                                                         ddim_steps,
                                                                         keep_jpgs
-                                                                        ], outputs=[reg_dataset_path])
+                                                                        ], outputs=[reg_dataset_path, merge_data_list_var])
 
     generate_images_var.click(fn=image_generation_button, inputs=[keep_jpgs], outputs=[], show_progress=True, scroll_to_output=True)
 
@@ -443,10 +543,12 @@ with gr.Blocks() as demo:
                                                                         batch_size,
                                                                         cpu_workers,
                                                                         model_path_var
-                                                                        ], outputs=[])
+                                                                        ], outputs=[merge_data_list_var])
     train_out_var.click(fn=train_button, inputs=[train_resume_var], outputs=[prune_model_var], show_progress=True, scroll_to_output=True)
     prune_model_var.click(fn=prune_ckpt, inputs=[], outputs=[])
     train_resume_var.change(fn=train_resume_checkbox, inputs=[train_resume_var], outputs=[model_path_var])
+
+    merge_data_button_var.click(fn=merge_data_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
 
 if __name__ == "__main__":
     demo.launch()

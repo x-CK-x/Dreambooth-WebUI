@@ -270,16 +270,24 @@ class DataModuleFromConfig(pl.LightningDataModule):
                  shuffle_val_dataloader=False):
         super().__init__()
 
-        if not opt.batch_size:
-            self.batch_size = batch_size
-        else:
-            self.batch_size = opt.batch_size
+        parser = get_parser()
+
+        global opt
+        opt, unknown = parser.parse_known_args()
+
+        print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+        print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+        print(opt)
+        print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+        print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+
+        self.batch_size = opt.batch_size
 
         self.dataset_configs = dict()
         self.num_workers = opt.workers
 
-        print('self.batch_size', self.batch_size)
-        print('self.num_workers', self.num_workers)
+        print('self.batch_size IN CONFIG ============', self.batch_size)
+        print('self.num_workers IN CONFIG ============', self.num_workers)
 
         self.use_worker_init_fn = use_worker_init_fn
         if train is not None:
@@ -336,6 +344,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           worker_init_fn=init_fn)
 
     def _val_dataloader(self, shuffle=False):
+
         if isinstance(self.datasets['validation'], Txt2ImgIterableBaseDataset) or self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
@@ -347,6 +356,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           shuffle=shuffle)
 
     def _test_dataloader(self, shuffle=False):
+
         is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
         if is_iterable_dataset or self.use_worker_init_fn:
             init_fn = worker_init_fn
@@ -360,6 +370,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers, worker_init_fn=init_fn, shuffle=shuffle)
 
     def _predict_dataloader(self, shuffle=False):
+
         if isinstance(self.datasets['predict'], Txt2ImgIterableBaseDataset) or self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
@@ -983,6 +994,8 @@ if __name__ == "__main__":
         print("#### Data #####")
         for k in data.datasets:
             print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
+
+        print("44444444444444444444444444444444444444")
 
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
