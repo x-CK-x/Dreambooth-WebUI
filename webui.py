@@ -206,39 +206,37 @@ def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_v
     return final_img_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", interactive=True, value=[False for name in sub_dir_names])
 
 def image_generation_button(keep_jpgs):
-    # supress MKL_SERVICE_FORCE_INTEL warning
-    warn_cmd = f"export MKL_SERVICE_FORCE_INTEL=1"
-    for line in execute(warn_cmd.split(" ")):
-        verbose_print(line)
+    try:
+        prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
+        image_gen_cmd = f"python scripts/stable_txt2img.py --seed {image_gen_config_df['seed_var']} " \
+                        f"--ddim_eta {image_gen_config_df['ddim_eta_var']} --n_samples {image_gen_config_df['n_samples']} " \
+                        f"--n_iter {image_gen_config_df['n_iter']} --scale {image_gen_config_df['scale_var']} " \
+                        f"--ddim_steps {image_gen_config_df['ddim_steps']} --ckpt {model_config_df['model_name']} " \
+                        f"--prompt \'{prompt}\' --outdir {image_gen_config_df['final_img_path']}"
 
-    prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
-    image_gen_cmd = f"python scripts/stable_txt2img.py --seed {image_gen_config_df['seed_var']} " \
-                    f"--ddim_eta {image_gen_config_df['ddim_eta_var']} --n_samples {image_gen_config_df['n_samples']} " \
-                    f"--n_iter {image_gen_config_df['n_iter']} --scale {image_gen_config_df['scale_var']} " \
-                    f"--ddim_steps {image_gen_config_df['ddim_steps']} --ckpt {model_config_df['model_name']} " \
-                    f"--prompt \'{prompt}\' --outdir {image_gen_config_df['final_img_path']}"
+        if keep_jpgs:
+            image_gen_cmd = f"{image_gen_cmd} --keep_jpgs"
 
-    if keep_jpgs:
-        image_gen_cmd = f"{image_gen_cmd} --keep_jpgs"
+        verbose_print("============================== IMAGE GENERATION TEST ==============================")
+        verbose_print(image_gen_cmd)
+        verbose_print("============================== --------------------- ==============================")
 
-    verbose_print("============================== IMAGE GENERATION TEST ==============================")
-    verbose_print(image_gen_cmd)
-    verbose_print("============================== --------------------- ==============================")
-
-    if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
-        if "seed_var" in image_gen_config_df and "ddim_eta_var" in image_gen_config_df and \
-                "n_samples" in image_gen_config_df and "n_iter" in image_gen_config_df and \
-                "scale_var" in image_gen_config_df and "ddim_steps" in image_gen_config_df and \
-                "model_name" in model_config_df and "prompt_string" in image_gen_config_df and "final_img_path" in image_gen_config_df:
-            for line in execute(image_gen_cmd.split(" ")):
-                verbose_print(line)
-    else:
-        if "seed_var" in image_gen_config_df and "ddim_eta_var" in image_gen_config_df and \
-                "n_samples" in image_gen_config_df and "n_iter" in image_gen_config_df and \
-                "scale_var" in image_gen_config_df and "ddim_steps" in image_gen_config_df and \
-                "model_name" in model_config_df and "prompt_string" in image_gen_config_df and "final_img_path" in image_gen_config_df:
-            for line in execute(image_gen_cmd.split(" ")):
-                verbose_print(line)
+        if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
+            if "seed_var" in image_gen_config_df and "ddim_eta_var" in image_gen_config_df and \
+                    "n_samples" in image_gen_config_df and "n_iter" in image_gen_config_df and \
+                    "scale_var" in image_gen_config_df and "ddim_steps" in image_gen_config_df and \
+                    "model_name" in model_config_df and "prompt_string" in image_gen_config_df and "final_img_path" in image_gen_config_df:
+                for line in execute(image_gen_cmd.split(" ")):
+                    verbose_print(line)
+        else:
+            if "seed_var" in image_gen_config_df and "ddim_eta_var" in image_gen_config_df and \
+                    "n_samples" in image_gen_config_df and "n_iter" in image_gen_config_df and \
+                    "scale_var" in image_gen_config_df and "ddim_steps" in image_gen_config_df and \
+                    "model_name" in model_config_df and "prompt_string" in image_gen_config_df and "final_img_path" in image_gen_config_df:
+                for line in execute(image_gen_cmd.split(" ")):
+                    verbose_print(line)
+    except Exception:
+        print("Not all image generation configurations are set")
 
 def train_save_button(max_training_steps, batch_size, cpu_workers, model_path):
     train_config_df['max_training_steps'] = int(max_training_steps)
@@ -283,40 +281,38 @@ def prune_ckpt():
     verbose_print(f"Model Pruning Complete!")
 
 def train_button(train_resume_var):
-    # supress MKL_SERVICE_FORCE_INTEL warning
-    warn_cmd = f"export MKL_SERVICE_FORCE_INTEL=1"
-    for line in execute(warn_cmd.split(" ")):
-        verbose_print(line)
+    try:
+        # train the model
+        prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
+        train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} " \
+                    f"--reg_data_root {image_gen_config_df['final_img_path']} -n {dataset_config_df['project_name']} " \
+                    f"--gpus {system_config_df['gpu_used_var']}, --data_root {dataset_config_df['dataset_path']} " \
+                    f"--max_training_steps {train_config_df['max_training_steps']} --class_word {prompt} --token {dataset_config_df['class_token']} " \
+                    f"--no-test --batch_size {train_config_df['batch_size']} --workers {train_config_df['cpu_workers']}"
 
-    # train the model
-    prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
-    train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} " \
-                f"--reg_data_root {image_gen_config_df['final_img_path']} -n {dataset_config_df['project_name']} " \
-                f"--gpus {system_config_df['gpu_used_var']}, --data_root {dataset_config_df['dataset_path']} " \
-                f"--max_training_steps {train_config_df['max_training_steps']} --class_word {prompt} --token {dataset_config_df['class_token']} " \
-                f"--no-test --batch_size {train_config_df['batch_size']} --workers {train_config_df['cpu_workers']}"
+        if train_resume_var:
+            train_cmd = f"{train_cmd} --resume --actual_resume {train_config_df['model_path']}"
 
-    if train_resume_var:
-        train_cmd = f"{train_cmd} --resume --actual_resume {train_config_df['model_path']}"
+        verbose_print("============================== TRAINING COMMAND TEST ==============================")
+        verbose_print(train_cmd)
+        verbose_print("============================== --------------------- ==============================")
 
-    verbose_print("============================== TRAINING COMMAND TEST ==============================")
-    verbose_print(train_cmd)
-    verbose_print("============================== --------------------- ==============================")
-
-    if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
-        if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
-                'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
-                'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
-                'max_training_steps' in train_config_df and prompt:
-            for line in execute(train_cmd.split(" ")):
-                verbose_print(line)
-    else:
-        if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
-                'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
-                'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
-                'max_training_steps' in train_config_df and prompt:
-            for line in execute(train_cmd.split(" ")):
-                verbose_print(line)
+        if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
+            if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
+                    'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
+                    'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
+                    'max_training_steps' in train_config_df and prompt:
+                for line in execute(train_cmd.split(" ")):
+                    verbose_print(line)
+        else:
+            if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
+                    'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
+                    'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
+                    'max_training_steps' in train_config_df and prompt:
+                for line in execute(train_cmd.split(" ")):
+                    verbose_print(line)
+    except Exception:
+        print("Not all training configurations are set")
 
     return gr.update(value="Prune Model", variant='secondary', visible=True)
 
