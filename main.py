@@ -69,10 +69,7 @@ def get_parser(**parser_kwargs):
     parser.add_argument(
         "-r",
         "--resume",
-        type=str,
-        const=True,
-        default="",
-        nargs="?",
+        action="store_true",
         help="resume from logdir or checkpoint in logdir",
     )
     parser.add_argument(
@@ -736,25 +733,23 @@ if __name__ == "__main__":
     print(opt)
     print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
     print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-
-    if opt.name and opt.resume:
-        raise ValueError(
-            "-n/--name and -r/--resume cannot be specified both."
-            "If you want to resume training in a new log folder, "
-            "use -n/--name in combination with --resume_from_checkpoint"
-        )
+    new_ckpt_path = None
     if opt.resume:
-        if not os.path.exists(opt.resume):
-            raise ValueError("Cannot find {}".format(opt.resume))
-        if os.path.isfile(opt.resume):
-            paths = opt.resume.split("/")
+        model_name = opt.actual_resume.split("/")[-1]
+        new_ckpt_path = opt.actual_resume[:-(len(model_name)+1)]
+
+        if not os.path.exists(opt.actual_resume):
+            raise ValueError("Cannot find {}".format(opt.actual_resume))
+
+        if os.path.isfile(opt.actual_resume):
+            paths = opt.actual_resume.split("/")
             # idx = len(paths)-paths[::-1].index("logs")+1
             # logdir = "/".join(paths[:idx])
             logdir = "/".join(paths[:-2])
-            ckpt = opt.resume
+            ckpt = opt.actual_resume
         else:
-            assert os.path.isdir(opt.resume), opt.resume
-            logdir = opt.resume.rstrip("/")
+            assert os.path.isdir(new_ckpt_path)
+            logdir = new_ckpt_path.rstrip("/")
             ckpt = os.path.join(logdir, "checkpoints", "last.ckpt")
 
         opt.resume_from_checkpoint = ckpt
@@ -917,7 +912,7 @@ if __name__ == "__main__":
             "setup_callback": {
                 "target": "main.SetupCallback",
                 "params": {
-                    "resume": opt.resume,
+                    "resume": new_ckpt_path,
                     "now": now,
                     "logdir": logdir,
                     "ckptdir": ckptdir,
@@ -1062,7 +1057,7 @@ if __name__ == "__main__":
         raise
     finally:
         # move newly created debug project to debug_runs
-        if opt.debug and not opt.resume and trainer.global_rank == 0:
+        if opt.debug and not new_ckpt_path and trainer.global_rank == 0:
             dst, name = os.path.split(logdir)
             dst = os.path.join(dst, "debug_runs", name)
             os.makedirs(os.path.split(dst)[0], exist_ok=True)
