@@ -508,7 +508,7 @@ with gr.Blocks() as demo:
                 ### To refresh the list of sub-directories (checkboxes) after merging, then go to the first tab in the UI and click ( APPLY SETTINGS )
                 """)
             with gr.Row():
-                train_resume_var = gr.Checkbox(interactive=True, label='Resume Training', value=False)
+                train_resume_var = gr.Checkbox(interactive=True, label='Resume Training (Uses the Current Model Path)', value=False)
                 model_path_var = gr.Textbox(visible=False)
             with gr.Row():
                 with gr.Row():
