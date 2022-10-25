@@ -30,7 +30,8 @@ Please make sure to install python: [Python Official Website](https://www.python
 - [X] Add model resume training from checkpoint
 - [X] Merge multiple datasets into one
 - [ ] Add realtime graphs for tracking loss & other metrics
-- [ ] A Training Job Scheduler
+- [X] Custom Preset Configurations to Add/Delete/Load
+- [X] Custom Training Job Scheduler
 - [ ] Progress Bar for image generation & training
 - [ ] An Advanced Image Cropping Tool using YOLOv7
 - [ ] Multi-GPU support:
