@@ -317,23 +317,27 @@ def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_v
     return final_img_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[False for name in sub_dir_names])
 
 def image_generation_button(keep_jpgs, presets_run_checkbox_group_var):
+    verbose_print(f"===========------- IMAGE GENERATING -------===========")
     global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
     model_config_df_backup, dataset_config_df_backup, system_config_df_backup, image_gen_config_df_backup, train_config_df_backup = copy.deepcopy([model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df])
 
     if presets_run_checkbox_group_var and not presets_run_checkbox_group_var == "":
         for selected_preset in presets_run_checkbox_group_var:
+            verbose_print(f"NOW RUNNING PRESET:\t{selected_preset}")
             # load preset into config only
             preset_to_config(selected_preset)
             # generate images
             image_generation_button(get_preset_dict(selected_preset)[3]["keep_jpgs"])#image_gen_config_df["keep_jpgs"]
     else:
         try:
-            prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
+            ckpt = model_config_df['model_name']
+            if ' ' in ckpt:
+                ckpt = f"\'{ckpt}\'"
             image_gen_cmd = f"python scripts/stable_txt2img.py --seed {image_gen_config_df['seed_var']} " \
                             f"--ddim_eta {image_gen_config_df['ddim_eta_var']} --n_samples {image_gen_config_df['n_samples']} " \
                             f"--n_iter {image_gen_config_df['n_iter']} --scale {image_gen_config_df['scale_var']} " \
-                            f"--ddim_steps {image_gen_config_df['ddim_steps']} --ckpt {model_config_df['model_name']} " \
-                            f"--prompt \'{prompt}\' --outdir {image_gen_config_df['final_img_path']}"
+                            f"--ddim_steps {image_gen_config_df['ddim_steps']} --ckpt {ckpt} " \
+                            f"--prompt \'{image_gen_config_df['prompt_string']}\' --outdir {image_gen_config_df['final_img_path']}"
 
             if keep_jpgs:
                 image_gen_cmd = f"{image_gen_cmd} --keep_jpgs"
@@ -411,12 +415,14 @@ def prune_ckpt():
     verbose_print(f"Model Pruning Complete!")
 
 def train_button(train_resume_var, presets_run_checkbox_group_var):
+    verbose_print(f"===========------- TRAINING -------===========")
     prune_btn = gr.update(value="Prune Model", variant='secondary', visible=True)
     global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
     model_config_df_backup, dataset_config_df_backup, system_config_df_backup, image_gen_config_df_backup, train_config_df_backup = copy.deepcopy([model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df])
 
     if presets_run_checkbox_group_var and not presets_run_checkbox_group_var == "":
         for selected_preset in presets_run_checkbox_group_var:
+            verbose_print(f"NOW RUNNING PRESET:\t{selected_preset}")
             # load preset into config only
             preset_to_config(selected_preset)
             # train
@@ -424,12 +430,18 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
     else:
         try:
             # train the model
-            prompt = image_gen_config_df['prompt_string'].replace('_', ' ')
-            train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {model_config_df['model_name']} " \
-                        f"--reg_data_root {image_gen_config_df['final_img_path']} -n {dataset_config_df['project_name']} " \
-                        f"--gpus {system_config_df['gpu_used_var']}, --data_root {dataset_config_df['dataset_path']} " \
-                        f"--max_training_steps {train_config_df['max_training_steps']} --class_word {prompt} --token {dataset_config_df['class_token']} " \
-                        f"--no-test --batch_size {train_config_df['batch_size']} --workers {train_config_df['cpu_workers']}"
+            ckpt = model_config_df['model_name']
+            if ' ' in ckpt:
+                ckpt = f"\'{ckpt}\'"
+            train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {ckpt} "
+
+            if image_gen_config_df['final_img_path'] and not image_gen_config_df['final_img_path'] == "":
+                train_cmd = f"{train_cmd} --reg_data_root {image_gen_config_df['final_img_path']}"
+
+            train_cmd = f"{train_cmd} -n {dataset_config_df['project_name']} " \
+            f"--gpus {system_config_df['gpu_used_var']}, --data_root {dataset_config_df['dataset_path']} " \
+            f"--max_training_steps {train_config_df['max_training_steps']} --class_word {image_gen_config_df['prompt_string']} --token {dataset_config_df['class_token']} " \
+            f"--no-test --batch_size {train_config_df['batch_size']} --workers {train_config_df['cpu_workers']}"
 
             if train_resume_var:
                 train_cmd = f"{train_cmd} --resume --actual_resume {train_config_df['model_path']}"
@@ -438,20 +450,12 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
             verbose_print(train_cmd)
             verbose_print("============================== --------------------- ==============================")
 
-            if ("regularizer_var" in image_gen_config_df and image_gen_config_df["regularizer_var"] == 1):
-                if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
-                        'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
-                        'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
-                        'max_training_steps' in train_config_df and prompt:
-                    for line in execute(train_cmd.split(" ")):
-                        verbose_print(line)
-            else:
-                if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
-                        'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
-                        'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
-                        'max_training_steps' in train_config_df and prompt:
-                    for line in execute(train_cmd.split(" ")):
-                        verbose_print(line)
+            if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
+                    'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
+                    'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
+                    'max_training_steps' in train_config_df and 'prompt_string' in image_gen_config_df:
+                for line in execute(train_cmd.split(" ")):
+                    verbose_print(line)
         except Exception:
             verbose_print("Not all training configurations are set")
     # configure session back to original
@@ -463,7 +467,6 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
     verbose_print(f"train_config_df:\t{train_config_df}")
     verbose_print("%"*42)
     return prune_btn
-
 
 def merge_data_button(merge_data_list_var):
     global dataset_merge_dirs
@@ -659,7 +662,7 @@ def presets_clear_button():
     preset_name_var = gr.update(lines=1, label='Preset Name (Optional)', value='')
     project_name = gr.update(lines=1, label='Project Name', value='')
     class_token = gr.update(lines=1, label='Token (e.g. firstnamelastname)', value='')
-    config_path = gr.update(lines=1, label='Path to Model YAML Config', value='')
+    config_path = gr.update(lines=1, label='Path to Model YAML Config', value=os.path.join(os.getcwd(), 'configs/stable-diffusion/v1-finetune_unfrozen.yaml'))
     dataset_path = gr.update(lines=1, label='Path to Class Target Dataset', value='')
     reg_dataset_path = gr.update(lines=1, label='Path to Regularization Dataset', value='')
     model_config_df["verbose"] = False
@@ -758,7 +761,7 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
         config_path = gr.update(lines=1, label='Path to Model YAML Config',
                                  value=str(dataset_config_df["config_path"]))
     else:
-        config_path = gr.update(lines=1, label='Path to Model YAML Config')
+        config_path = gr.update(lines=1, label='Path to Model YAML Config', value=os.path.join(os.getcwd(), 'configs/stable-diffusion/v1-finetune_unfrozen.yaml'))
     if "dataset_path" in dataset_config_df:
         dataset_path = gr.update(lines=1, label='Path to Class Target Dataset',
                                   value=str(dataset_config_df["dataset_path"]))
@@ -886,7 +889,8 @@ with gr.Blocks() as demo:
         """
         ### Make sure a stable diffusion model with the (.ckpt) extension has been downloaded
         ### Please move the downloaded model into the "Dreambooth-WebUI" repository folder
-        Important Note: Please Save the \'Session\' Settings, before managing the \'Preset\' Button Options
+        #### Important Note: Please Save the \'Session\' Settings, before managing the \'Preset\' Button Options
+        #### Please NO spaces in the ckpt file name
         """)
 
         verbose_print(f"ckpt_files {ckpt_files}")
@@ -923,7 +927,7 @@ with gr.Blocks() as demo:
         if "config_path" in dataset_config_df:
             config_path = gr.Textbox(lines=1, label='Path to Model YAML Config', value=str(dataset_config_df["config_path"]))
         else:
-            config_path = gr.Textbox(lines=1, label='Path to Model YAML Config')
+            config_path = gr.Textbox(lines=1, label='Path to Model YAML Config', value=os.path.join(os.getcwd(), 'configs/stable-diffusion/v1-finetune_unfrozen.yaml'))
         if "dataset_path" in dataset_config_df:
             dataset_path = gr.Textbox(lines=1, label='Path to Class Target Dataset', value=str(dataset_config_df["dataset_path"]))
         else:
@@ -965,6 +969,8 @@ with gr.Blocks() as demo:
         """
         ### Please make sure that if you are using a custom regularization dataset, that the images are formatted 512x512
         ### Here is an online formatter for cropping images if needed [https://www.birme.net/](https://www.birme.net/)
+        #### Important Note: Please Save the \'Session\' Settings, before managing the \'Preset\' Button Options
+        #### Please NO spaces in the ckpt file name
         """)
         regularizer_save_var = gr.Button(value="Apply & Save Settings", variant='primary')
         with gr.Row():
@@ -1027,6 +1033,11 @@ with gr.Blocks() as demo:
             generate_images_var = gr.Button(value="Generate", variant='secondary')
 
     with gr.Tab("Fine-Tuning Model"):
+        gr.Markdown(
+        """
+        #### Important Note: Please Save the \'Session\' Settings, before managing the \'Preset\' Button Options
+        #### Please NO spaces in the ckpt file name
+        """)
         fine_tine_save_var = gr.Button(value="Apply & Save Settings", variant='primary')
 
         if "max_training_steps" in train_config_df:
