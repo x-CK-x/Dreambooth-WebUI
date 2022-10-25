@@ -1,7 +1,7 @@
 # Dreambooth Stable Diffusion Demo w/ a GUI ::: Based on [JoePenna's Implementation](https://github.com/JoePenna/Dreambooth-Stable-Diffusion) 🤗
 ### Setup/Configure/Regularization/Fine-Tune: with this DreamBooth stable diffusion demo.
 
-https://user-images.githubusercontent.com/48079849/196496289-6816af68-b298-4348-b907-d1a0eb2e38cd.mp4
+https://user-images.githubusercontent.com/48079849/197858834-9d0e5a1b-1c59-41aa-85a6-04fa8b5a3826.mp4
 
 ## BEFORE continuing. Please Verify the following pre-requisites:
     - the system is running a NVIDIA gpu
