@@ -24,12 +24,15 @@ Please make sure to install python: [Python Official Website](https://www.python
 ### Additional planned features:
 - [X] The Pruning Feature from the repo (12GB to 2GB)
 - [X] Resolve Gradio Components not updating Components for real-time logging feed
+- [ ] Add realtime graphs for tracking loss & other metrics
+- [ ] Separate Mode to run the Diffusers Dreambooth with UI (resolves *most* gpu memory constraints)
+    - [ ] Option 1: [fast-stable-diffusion](https://github.com/TheLastBen/fast-stable-diffusion)
+    - [ ] Option 2: [ShivamShrirao-diffusers](https://github.com/ShivamShrirao/diffusers/tree/main/examples/dreambooth)
 - [ ] Insert support for jupyter notebook & google colab
     - [X] Notebook finished & tested successfully
     - [ ] Adding [https://github.com/localtunnel/localtunnel](https://github.com/localtunnel/localtunnel) to view the GUI from browser if using a cloud computing instance 
 - [X] Add model resume training from checkpoint
 - [X] Merge multiple datasets into one
-- [ ] Add realtime graphs for tracking loss & other metrics
 - [X] Custom Preset Configurations to Add/Delete/Load
 - [X] Custom Training Job Scheduler
 - [ ] Progress Bar for image generation & training
