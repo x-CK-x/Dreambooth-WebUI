@@ -40,14 +40,18 @@ session_file_name = "gui_params.json"
 # presets config
 presets_file_name = "presets_params.json"
 
-def load_session_config(f_name):
-    config_list = []
+model_config_df = {}
+dataset_config_df = {}
+system_config_df = {}
+image_gen_config_df = {}
+train_config_df = {}
 
+def load_session_config(f_name):
+    global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
     file_exists = os.path.exists(f_name)
     if not file_exists:
         with open(f_name, 'w') as f:
             f.close()
-        config_list = [{}] * 5
     else:
         data_flag = True # detects if the file is empty
         with open(f_name, 'r') as json_file:
@@ -61,42 +65,34 @@ def load_session_config(f_name):
                 data = json.load(json_file)
                 temp_config = [dictionary for dictionary in data if "model_name" in dictionary]
                 if len(temp_config) > 0:
-                    temp_config = temp_config[0]
+                    model_config_df = temp_config[0]
                 else:
-                    temp_config = {}
-                config_list.append(temp_config)
+                    model_config_df = {}
 
                 temp_config = [dictionary for dictionary in data if "config_path" in dictionary]
                 if len(temp_config) > 0:
-                    temp_config = temp_config[0]
+                    dataset_config_df = temp_config[0]
                 else:
-                    temp_config = {}
-                config_list.append(temp_config)
+                    dataset_config_df = {}
 
                 temp_config = [dictionary for dictionary in data if "gpu_used_var" in dictionary]
                 if len(temp_config) > 0:
-                    temp_config = temp_config[0]
+                    system_config_df = temp_config[0]
                 else:
-                    temp_config = {}
-                config_list.append(temp_config)
+                    system_config_df = {}
 
                 temp_config = [dictionary for dictionary in data if "ddim_eta_var" in dictionary]
                 if len(temp_config) > 0:
-                    temp_config = temp_config[0]
+                    image_gen_config_df = temp_config[0]
                 else:
-                    temp_config = {}
-                config_list.append(temp_config)
+                    image_gen_config_df = {}
 
                 temp_config = [dictionary for dictionary in data if "max_training_steps" in dictionary]
                 if len(temp_config) > 0:
-                    temp_config = temp_config[0]
+                    train_config_df = temp_config[0]
                 else:
-                    temp_config = {}
-                config_list.append(temp_config)
+                    train_config_df = {}
                 json_file.close()
-        else:
-            config_list = [{}] * 5
-    return config_list
 
 def load_presets_config(f_name):
     global presets
@@ -123,8 +119,8 @@ def load_presets_config(f_name):
 
 # create save file for everything to be written to (open/overwrite/close) whenever changes are saved
 # load session
-global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
-model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df = load_session_config(session_file_name)
+load_session_config(session_file_name)
+
 dataset_merge_dirs = update_merged_dirs()
 verbose_print(dataset_merge_dirs)
 
@@ -146,6 +142,7 @@ def dependency_install_button():
 
 def update_JSON(is_preset):
     global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
+
     if is_preset:
         for entry in presets:
             verbose_print(entry)
@@ -155,12 +152,12 @@ def update_JSON(is_preset):
         f.close()
         verbose_print("@"*42)
     else:
-        temp = [model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df]
+        temp = copy.deepcopy([model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df])
         for entry in temp:
             verbose_print(entry)
 
         with open(session_file_name, "w") as f:
-            json.dump([model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df], indent=4, fp=f)
+            json.dump(temp, indent=4, fp=f)
         f.close()
         verbose_print("="*42)
 
@@ -182,7 +179,7 @@ def verbose_checkbox():
     model_config_df["verbose"] = not model_config_df["verbose"]
 
 def model_config_save_button(model_name, gpu_used_var, project_name, class_token, config_path, dataset_path, reg_dataset_path, preset_name_var):
-    global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
+    global model_config_df, dataset_config_df, system_config_df
     verbose_print(f"==========----- MODEL CONFIG SAVE -----==========")
     verbose_print(f"BEFORE:::\tpresets:\t{presets}")
 
@@ -221,7 +218,7 @@ def model_config_save_button(model_name, gpu_used_var, project_name, class_token
                 script_file.close()
 
     # update json file
-    update_JSON(False)
+    update_JSON(is_preset=False)
 
     # create directories if necessary
     create_data_dirs()
@@ -290,7 +287,7 @@ def change_regularizer_view(choice):
         image_gen_config_df["regularizer_var"] = 1
 
 def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, n_samples, n_iter, ddim_steps, keep_jpgs):
-    global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
+    global dataset_config_df, image_gen_config_df
     image_gen_config_df["final_img_path"] = final_img_path
     image_gen_config_df["seed_var"] = int(seed_var)
     image_gen_config_df["ddim_eta_var"] = float(ddim_eta_var)
@@ -373,7 +370,7 @@ def image_generation_button(keep_jpgs, presets_run_checkbox_group_var):
     verbose_print("%"*42)
 
 def train_save_button(max_training_steps, batch_size, cpu_workers, model_path):
-    global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
+    global image_gen_config_df, train_config_df
     train_config_df['max_training_steps'] = int(max_training_steps)
     train_config_df['batch_size'] = int(batch_size)
     train_config_df['cpu_workers'] = int(cpu_workers)
