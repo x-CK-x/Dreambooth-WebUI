@@ -1,3 +1,4 @@
+import math
 import shutil
 from PIL import Image
 import gradio as gr
@@ -503,13 +504,13 @@ def merge_data_button(merge_data_list_var):
     merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
     return merge_data_list_var
 
-def create_flip_dirs(paths):
+def create_new_dirs(paths, addon):
     new_paths = []
     for i in range(0, len(paths)):
-        dataset = paths[i] + "_hflip"
+        dataset = paths[i] + addon
         if not os.path.exists(dataset):
             new_paths.append(dataset)
-            verbose_print(f"NEW flipped dataset:\t{dataset}")
+            verbose_print(f"NEW dataset:\t{dataset}")
             dir_create_str = f"mkdir -p {dataset}"
             sub.run(dir_create_str.split(" "))
         else:
@@ -528,17 +529,14 @@ def horizontal_flip_button(merge_data_list_var):
     verbose_print(f'directories to generate flipped images:\t{paths_to_flip}')
 
     # generate new directories
-    new_paths_to_flip = create_flip_dirs(paths_to_flip)
+    new_paths_to_flip = create_new_dirs(paths_to_flip, "_hflip")
 
     # loop for all sub-folders (SRC)
     for i in range(0, len(paths_to_flip)):
         ### get images from sub-dir (SRC)
         images_list = glob.glob1(paths_to_flip[i], "*.png")
 
-        ### count total in (SRC)
-        total = len(images_list)
-
-        ### move images from each (SRC) into the (DST)
+        ### create & move images from each (SRC) into the (DST)
         counter = 0
         for image in images_list:
             original_image_path = os.path.join(paths_to_flip[i], image)
@@ -556,6 +554,79 @@ def horizontal_flip_button(merge_data_list_var):
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
     merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
     return merge_data_list_var
+
+def partial_image_crop_button(merge_data_list_var):
+    global dataset_merge_dirs
+    # get all directories in the path
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    verbose_print(f'sub_dir_names:\t{sub_dir_names}')
+    # get selected paths
+    paths_to_flip = []
+    for name in merge_data_list_var:
+        paths_to_flip.append(dataset_merge_dirs[sub_dir_names.index(name)])
+    verbose_print(f'directories to generate image fragments:\t{paths_to_flip}')
+
+    # sample image & determine valid dimensions & ( portrait or landscape )
+    images_list = glob.glob1(paths_to_flip[0], "*.png")
+    original_image_path = os.path.join(paths_to_flip[0], images_list[0])
+    img = Image.open(original_image_path)
+    width, height = img.size
+    if (width == 1024 and height == 512) or (width == 512 and height == 1024): # valid
+        img_fragment_text = []
+        crop_dims = [] # contains left, top, right, bottom (FOR EACH FRAGMENT)
+        if (width == 512 and height == 1024): # portrait
+            img_fragment_text = ["_top", "_mid", "_bottom"]
+            mid_upper = math.ceil(height/3)
+            mid_lower = mid_upper+512
+            crop_dims = [(0, 0, width, int(height/2)), (0, mid_upper, width, mid_lower), (0, int(height/2), width, height)]
+        else: # landscape
+            img_fragment_text = ["_left", "_mid", "_right"]
+            mid_left = math.ceil(width/3)
+            mid_right = mid_left+512
+            crop_dims = [(0, 0, int(width/2), height), (mid_left, 0, mid_right, height), (int(width/2), 0, width, height)]
+        # generate new directories
+        for fragment, crop_dim in zip(img_fragment_text, crop_dims):
+            new_paths_to_flip = create_new_dirs(paths_to_flip, fragment)
+
+            # loop for all sub-folders (SRC)
+            for i in range(0, len(paths_to_flip)):
+                ### get images from sub-dir (SRC)
+                images_list = glob.glob1(paths_to_flip[i], "*.png")
+
+                ### create & move images from each (SRC) into the (DST)
+                counter = 0
+                for image in images_list:
+                    original_image_path = os.path.join(paths_to_flip[i], image)
+                    # crop image
+                    img = Image.open(original_image_path)
+                    img = img.crop(crop_dim)
+                    # save image
+                    img.save(os.path.join(new_paths_to_flip[i], f"{counter}.png"))
+                    counter += 1
+                verbose_print(f'Done Generating Images of the \'{(fragment).split("_")}\' Fragment :: {paths_to_flip[i]} into {new_paths_to_flip[i]}')
+    else:
+        verbose_print(f"INVALID image resolutions detected. EXPECTED (512x1024) or (1024x512)")
+
+
+
+
+
+
+
+
+
+
+
+    # update merged dirs list
+    dataset_merge_dirs = update_merged_dirs()
+
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
+    return merge_data_list_var
+
+
+
+
 
 def generate_random_long():
     import random
@@ -1110,17 +1181,21 @@ with gr.Blocks() as demo:
                 ### ( EVEN MORE IMPORTANT ) make sure that if merging sub-directories, that there is no left over data still in the current dataset_path. In other words make sure images are in some kind of sub-directory. (otherwise data could be overwritten!)
                 ### To refresh the list of sub-directories (checkboxes) after merging, then go to the first tab in the UI and click ( APPLY SETTINGS )
                 #### The Horizontal Flip \'Button\' creates new directories containing the flipped images
+                #### The Partial Image Crop \'Button\' generates THREE new directories depending on if the image is landscape (1024x512) or portrait (512x1024) oriented
+                #### The Partial Image Crop \'Button\' creates a sliding window crop over the image equidistant from each other
+                #### It is IMPORTANT that images are either (1024x512) or (512x1024) to use the partial crop button
                 """)
             with gr.Row():
                 train_resume_var = gr.Checkbox(label='Resume Training (Uses the Current Model Path)', value=False)
                 model_path_var = gr.Textbox(visible=False)
             with gr.Row():
-                with gr.Row():
+                with gr.Column():
                     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
                     merge_data_list_var = gr.CheckboxGroup(choices=sub_dir_names, label="Dataset Sub-Directories")
-                with gr.Row():
+                with gr.Column():
                     merge_data_button_var = gr.Button(value="Merge All Data Sub-Directories", variant='secondary')
                     horizontal_flip_button_var = gr.Button(value="Horizontal Flip of Data in Sub-Directories", variant='secondary')
+                    partial_image_crop_button_var = gr.Button(value="Partial Image Crop (makes 3 fragments of the original)", variant='secondary')
     with gr.Tab("Real-Time Loss Graphs"):
         gr.Markdown(
         """
@@ -1196,6 +1271,7 @@ with gr.Blocks() as demo:
                 train_resume_var, model_path_var, merge_data_list_var])
 
     horizontal_flip_button_var.click(fn=horizontal_flip_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
+    partial_image_crop_button_var.click(fn=partial_image_crop_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
 
 if __name__ == "__main__":
     demo.launch()
