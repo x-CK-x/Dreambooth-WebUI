@@ -1,5 +1,5 @@
 import shutil
-
+from PIL import Image
 import gradio as gr
 import os
 import sys
@@ -232,7 +232,7 @@ def model_config_save_button(model_name, gpu_used_var, project_name, class_token
     verbose_print(f'subdirs:\t{sub_dir_names}')
     verbose_print(f"AFTER:::\tpresets:\t{presets}")
     verbose_print(f"==========----- MODEL CONFIG SAVE -----========== done")
-    return reg_dataset_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[False for name in sub_dir_names])
+    return reg_dataset_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
 
 def get_all_presets_keys():
     global presets
@@ -314,7 +314,7 @@ def image_gen_config_save_button(final_img_path, seed_var, ddim_eta_var, scale_v
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
     verbose_print(f'subdirs:\t{sub_dir_names}')
 
-    return final_img_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[False for name in sub_dir_names])
+    return final_img_path, gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
 
 def image_generation_button(keep_jpgs, presets_run_checkbox_group_var):
     verbose_print(f"===========------- IMAGE GENERATING -------===========")
@@ -390,7 +390,7 @@ def train_save_button(max_training_steps, batch_size, cpu_workers, model_path):
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
     verbose_print(f'subdirs:\t{sub_dir_names}')
 
-    return gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[False for name in sub_dir_names])
+    return gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
 
 def train_resume_checkbox(checkbox):
     if checkbox:
@@ -474,18 +474,9 @@ def merge_data_button(merge_data_list_var):
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
     verbose_print(f'sub_dir_names:\t{sub_dir_names}')
 
-    # remove the booleans
-    merge_data_list_var = list(filter(lambda x:not(type(x) is bool), merge_data_list_var))
-
-    temp_list = [False]*len(dataset_merge_dirs)
-    for element in merge_data_list_var:
-        temp_list[sub_dir_names.index(element)] = True
-    merge_data_list_var = temp_list
-
     paths_to_merge = []
-    for i in range(0, len(merge_data_list_var)):
-        if merge_data_list_var[i]:
-            paths_to_merge.append(dataset_merge_dirs[i])
+    for name in merge_data_list_var:
+        paths_to_merge.append(dataset_merge_dirs[sub_dir_names.index(name)])
 
     verbose_print(f'directories to merge:\t{paths_to_merge}')
 
@@ -509,7 +500,62 @@ def merge_data_button(merge_data_list_var):
     dataset_merge_dirs = update_merged_dirs()
 
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
-    return gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[False for name in sub_dir_names])
+    merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
+    return merge_data_list_var
+
+def create_flip_dirs(paths):
+    new_paths = []
+    for i in range(0, len(paths)):
+        dataset = paths[i] + "_hflip"
+        if not os.path.exists(dataset):
+            new_paths.append(dataset)
+            verbose_print(f"NEW flipped dataset:\t{dataset}")
+            dir_create_str = f"mkdir -p {dataset}"
+            sub.run(dir_create_str.split(" "))
+        else:
+            verbose_print(f"dataset EXISTS:\t{dataset}")
+    return new_paths
+
+def horizontal_flip_button(merge_data_list_var):
+    global dataset_merge_dirs
+    # get all directories in the path
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    verbose_print(f'sub_dir_names:\t{sub_dir_names}')
+    # get selected paths
+    paths_to_flip = []
+    for name in merge_data_list_var:
+        paths_to_flip.append(dataset_merge_dirs[sub_dir_names.index(name)])
+    verbose_print(f'directories to generate flipped images:\t{paths_to_flip}')
+
+    # generate new directories
+    new_paths_to_flip = create_flip_dirs(paths_to_flip)
+
+    # loop for all sub-folders (SRC)
+    for i in range(0, len(paths_to_flip)):
+        ### get images from sub-dir (SRC)
+        images_list = glob.glob1(paths_to_flip[i], "*.png")
+
+        ### count total in (SRC)
+        total = len(images_list)
+
+        ### move images from each (SRC) into the (DST)
+        counter = 0
+        for image in images_list:
+            original_image_path = os.path.join(paths_to_flip[i], image)
+            # flip image
+            img = Image.open(original_image_path)
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            # save image
+            img.save(os.path.join(new_paths_to_flip[i], f"{counter}.png"))
+            counter += 1
+        verbose_print(f'Done Flipping Images {paths_to_flip[i]} into {new_paths_to_flip[i]}')
+
+    # update merged dirs list
+    dataset_merge_dirs = update_merged_dirs()
+
+    sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
+    merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
+    return merge_data_list_var
 
 def generate_random_long():
     import random
@@ -694,8 +740,7 @@ def presets_clear_button():
     train_resume_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=False)
     model_path_var = gr.update(visible=False)
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
-    merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories",
-                                           value=[False for name in sub_dir_names])
+    merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
 
     verbose_print(f"==========----- PRESET CLEAR -----========== done")
 
@@ -861,8 +906,7 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
     train_resume_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=False)
     model_path_var = gr.update(visible=False)
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
-    merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories",
-                                           value=[False for name in sub_dir_names])
+    merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
 
     verbose_print(f"==========----- PRESET LOAD -----========== done")
 
@@ -1065,6 +1109,7 @@ with gr.Blocks() as demo:
                 ### ( IMPORTANT ) if merging, be aware that the data merged is (not copied); please back up sub-directories if you want to keep their contents!
                 ### ( EVEN MORE IMPORTANT ) make sure that if merging sub-directories, that there is no left over data still in the current dataset_path. In other words make sure images are in some kind of sub-directory. (otherwise data could be overwritten!)
                 ### To refresh the list of sub-directories (checkboxes) after merging, then go to the first tab in the UI and click ( APPLY SETTINGS )
+                #### The Horizontal Flip \'Button\' creates new directories containing the flipped images
                 """)
             with gr.Row():
                 train_resume_var = gr.Checkbox(label='Resume Training (Uses the Current Model Path)', value=False)
@@ -1072,9 +1117,10 @@ with gr.Blocks() as demo:
             with gr.Row():
                 with gr.Row():
                     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
-                    merge_data_list_var = gr.CheckboxGroup(choices=sub_dir_names, label="Dataset Sub-Directories", value=[False for name in sub_dir_names])
+                    merge_data_list_var = gr.CheckboxGroup(choices=sub_dir_names, label="Dataset Sub-Directories")
                 with gr.Row():
                     merge_data_button_var = gr.Button(value="Merge All Data Sub-Directories", variant='secondary')
+                    horizontal_flip_button_var = gr.Button(value="Horizontal Flip of Data in Sub-Directories", variant='secondary')
     with gr.Tab("Real-Time Loss Graphs"):
         gr.Markdown(
         """
@@ -1148,6 +1194,8 @@ with gr.Blocks() as demo:
                 regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
                 keep_jpgs, n_samples, n_iter, ddim_steps, max_training_steps, batch_size, cpu_workers, prune_model_var, \
                 train_resume_var, model_path_var, merge_data_list_var])
+
+    horizontal_flip_button_var.click(fn=horizontal_flip_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
 
 if __name__ == "__main__":
     demo.launch()
