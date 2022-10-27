@@ -448,12 +448,20 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
             verbose_print(train_cmd)
             verbose_print("============================== --------------------- ==============================")
 
-            if 'config_path' in dataset_config_df and 'model_name' in model_config_df and \
-                    'final_img_path' in image_gen_config_df and 'project_name' in dataset_config_df and \
-                    'gpu_used_var' in system_config_df and 'dataset_path' in dataset_config_df and \
-                    'max_training_steps' in train_config_df and 'prompt_string' in image_gen_config_df:
+            checklist_text = ["config_path", "model_name", "final_img_path", "project_name", "gpu_used_var", "dataset_path", "max_training_steps", "prompt_string"]
+            run_checklist = [('config_path' in dataset_config_df), ('model_name' in model_config_df),
+                             ('final_img_path' in image_gen_config_df), ('project_name' in dataset_config_df),
+                             ('gpu_used_var' in system_config_df), ('dataset_path' in dataset_config_df),
+                             ('max_training_steps' in train_config_df), ('prompt_string' in image_gen_config_df)]
+
+            if all(run_checklist):
                 for line in execute(train_cmd.split(" ")):
                     verbose_print(line)
+            else:
+                unmet_requirements = [i for i in range(len(run_checklist)) if not run_checklist[i]]
+                unmet_requirements = [checklist_text[i] for i in range(len(unmet_requirements))]
+                verbose_print(f"unmet_requirements:\t{unmet_requirements}")
+
         except Exception:
             verbose_print("Not all training configurations are set")
     # configure session back to original
