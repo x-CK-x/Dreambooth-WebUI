@@ -184,7 +184,8 @@ def model_config_save_button(model_name, gpu_used_var, project_name, class_token
     verbose_print(f"BEFORE:::\tpresets:\t{presets}")
 
     model_config_df["model_name"] = model_name
-    system_config_df["gpu_used_var"] = int(gpu_used_var.replace("gpu: ", ""))
+    if gpu_used_var and isinstance(gpu_used_var, str) and len(gpu_used_var) > 0:
+        system_config_df["gpu_used_var"] = int(gpu_used_var.replace("gpu: ", ""))
     dataset_config_df["project_name"] = project_name
     dataset_config_df["class_token"] = class_token
     dataset_config_df["config_path"] = config_path
@@ -398,23 +399,41 @@ def train_resume_checkbox(checkbox):
             return gr.update(label='Path to ckpt model in logs directory', visible=True)
     else:
         return gr.update(visible=False)
-def prune_ckpt():
-    temp_path = os.path.join(cwd, 'logs')
-    paths = sorted(Path(temp_path).iterdir(), key=os.path.getmtime)
-    verbose_print(paths)
-    temp_path = os.path.join(temp_path, paths[-1])
-    temp_path = os.path.join(temp_path, 'checkpoints/last.ckpt')
-    verbose_print(temp_path)
+def prune_ckpt(prune_model_checkbox_group_var):
+    model_options = []
+    model_options_path = os.path.join(os.getcwd(), 'logs/')
+    if os.path.exists(model_options_path):
+        model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
+    if "model_path" in train_config_df and (train_config_df["model_path"]) and (
+            not train_config_df["model_path"] == ""):
+        model_options.append(train_config_df["model_path"])
 
-    train_config_df["model_path"] = temp_path
-
-    prune_cmd = f"python prune-ckpt.py --ckpt {temp_path}"
-    execute(prune_cmd)
-    verbose_print(f"Model Pruning Complete!")
+    for name in prune_model_checkbox_group_var:
+        # find all matches
+        for full_path in model_options:
+            if name in full_path and not os.path.isdir(full_path):
+                if '.ckpt' in name:
+                    prune_cmd = f"python prune-ckpt.py --ckpt {full_path}"
+                    execute(prune_cmd)
+                    verbose_print(f"Model Pruning Complete!")
+                    break
+            elif name in full_path:
+                # ckpt file ?
+                for file in os.listdir(full_path):
+                    if '.ckpt' in file:
+                        prune_cmd = f"python prune-ckpt.py --ckpt {full_path}"
+                        execute(prune_cmd)
+                        verbose_print(f"Model Pruning Complete!")
+                        break
+                    # contains checkpoint dir ?
+                    elif 'checkpoints' in file and os.path.isdir(os.path.join(full_path, file)):
+                        prune_cmd = f"python prune-ckpt.py --ckpt {os.path.join(os.path.join(full_path, 'checkpoints/'), 'last.ckpt')}"
+                        execute(prune_cmd)
+                        verbose_print(f"Model Pruning Complete!")
+                        break
 
 def train_button(train_resume_var, presets_run_checkbox_group_var):
     verbose_print(f"===========------- TRAINING -------===========")
-    prune_btn = gr.update(value="Prune Model", variant='secondary', visible=True)
     global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
     model_config_df_backup, dataset_config_df_backup, system_config_df_backup, image_gen_config_df_backup, train_config_df_backup = copy.deepcopy([model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df])
 
@@ -424,7 +443,7 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
             # load preset into config only
             preset_to_config(selected_preset)
             # train
-            prune_btn = train_button(train_resume_var=False, presets_run_checkbox_group_var="")
+            train_button(train_resume_var=False, presets_run_checkbox_group_var="")
     else:
         try:
             # train the model
@@ -464,6 +483,7 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
 
         except Exception:
             verbose_print("Not all training configurations are set")
+            verbose_print("If this is NOT a configuration error, then try entering the following command in the terminal:\nexport MKL_SERVICE_FORCE_INTEL=1")
     # configure session back to original
     model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df = [model_config_df_backup, dataset_config_df_backup, system_config_df_backup, image_gen_config_df_backup, train_config_df_backup]
     verbose_print(f"model_config_df:\t{model_config_df}")
@@ -472,7 +492,6 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
     verbose_print(f"image_gen_config_df:\t{image_gen_config_df}")
     verbose_print(f"train_config_df:\t{train_config_df}")
     verbose_print("%"*42)
-    return prune_btn
 
 def merge_data_button(merge_data_list_var):
     global dataset_merge_dirs
@@ -612,26 +631,12 @@ def partial_image_crop_button(merge_data_list_var):
     else:
         verbose_print(f"INVALID image resolutions detected. EXPECTED (512x1024) or (1024x512)")
 
-
-
-
-
-
-
-
-
-
-
     # update merged dirs list
     dataset_merge_dirs = update_merged_dirs()
 
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
     merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
     return merge_data_list_var
-
-
-
-
 
 def generate_random_long():
     import random
@@ -789,9 +794,19 @@ def presets_clear_button():
     reg_dataset_path = gr.update(lines=1, label='Path to Regularization Dataset', value='')
     model_config_df["verbose"] = False
     verbose = gr.update(label='Verbose Mode', value=False, interactive=True)
-    system_config_df["gpu_used_var"] = [i for i in range(0, torch.cuda.device_count())][0]
-    temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
-    gpu_used_var = gr.update(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU')
+
+    gpu_list = [i for i in range(0, torch.cuda.device_count())]
+    temp_text = []
+    if len(gpu_list) > 0:
+        system_config_df["gpu_used_var"] = gpu_list[0]
+        temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
+
+    if "gpu_used_var" in system_config_df:
+        gpu_used_var = gr.update(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU', visible=True)
+    else:
+        gpu_used_var = gr.update(choices=temp_text, label='Select GPU', visible=False)
+
+
     presets_run_ckbx_var = gr.update(label='Job Scheduler', value=False)
     presets_run_button_var = gr.update(value='Image Gen + Train', variant='primary', visible=False)
     presets_run_checkbox_group_var = gr.update(choices=get_all_presets_keys(), label='All Presets', value=[], visible=presets_run_ckbx_var)
@@ -812,6 +827,17 @@ def presets_clear_button():
     batch_size = gr.update(minimum=1, maximum=64, step=1, label='Batch Size', value=1)
     cpu_workers = gr.update(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads',
                             value=int(mp.cpu_count() / 2))
+    model_options = []
+    model_options_path = os.path.join(os.getcwd(), 'logs/')
+    if os.path.exists(model_options_path):
+        model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
+    if "model_path" in train_config_df and (train_config_df["model_path"]) and (
+            not train_config_df["model_path"] == ""):
+        model_options.append(train_config_df["model_path"])
+    prune_model_checkbox_var = gr.update(label='Prune Model', value=False)
+    prune_model_checkbox_group_var = gr.update(label='Prune Model Options',
+                                                      choices=sorted([name.split("/")[-1] for name in model_options]),
+                                                      visible=False)
     prune_model_var = gr.update(visible=False)
     train_resume_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=False)
     model_path_var = gr.update(visible=False)
@@ -825,9 +851,9 @@ def presets_clear_button():
            verbose,gpu_used_var,presets_run_ckbx_var,presets_run_button_var,presets_run_checkbox_group_var,\
            regularizer_var,final_img_path,seed_var,ddim_eta_var,scale_var,prompt_string,\
            keep_jpgs,n_samples,n_iter,ddim_steps,max_training_steps,batch_size,cpu_workers,prune_model_var,\
-           train_resume_var,model_path_var,merge_data_list_var
+           train_resume_var,model_path_var,merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var
 
-def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var):
+def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var, prune_model_checkbox_var):
     verbose_print(f"==========----- PRESET LOAD -----==========")
     presets_delete_ckbx_var_temp = presets_delete_ckbx_var
     presets_run_ckbx_var_temp = presets_run_ckbx_var
@@ -853,7 +879,7 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
     verbose, gpu_used_var, presets_run_ckbx_var, presets_run_button_var, presets_run_checkbox_group_var, \
     regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
     keep_jpgs, n_samples, n_iter, ddim_steps, max_training_steps, batch_size, cpu_workers, prune_model_var, \
-    train_resume_var, model_path_var, merge_data_list_var = [None]*33
+    train_resume_var, model_path_var, merge_data_list_var = [None]*35
 
     # update components
     presets_load_dropdown_var = gr.update(choices=get_all_presets_keys(), label='Optional Presets')
@@ -898,10 +924,20 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
     else:
         model_config_df["verbose"] = False
         verbose = gr.update(label='Verbose Mode', value=False, interactive=True)
+
+    temp_text = []
+    gpu_list = [i for i in range(0, torch.cuda.device_count())]
     if not "gpu_used_var" in system_config_df:
-        system_config_df["gpu_used_var"] = [i for i in range(0, torch.cuda.device_count())][0]  # EXPECT THIS TO CHANGE IN THE FUTURE
-    temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
-    gpu_used_var = gr.update(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU')
+        if len(gpu_list) > 0:
+            system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
+            temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
+
+    gpu_used_var = None
+    if "gpu_used_var" in system_config_df:
+        gpu_used_var = gr.update(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU', visible=True)
+    else:
+        gpu_used_var = gr.update(choices=temp_text, label='Select GPU', visible=False)
+
     presets_run_ckbx_var = gr.update(label='Job Scheduler', value=presets_run_ckbx_var_temp)
     presets_run_button_var = gr.update(value='Image Gen + Train', variant='primary', visible=False)
     presets_run_checkbox_group_var = gr.update(choices=get_all_presets_keys(), label='All Presets', value=[], visible=presets_run_ckbx_var_temp)
@@ -978,7 +1014,18 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
     else:
         cpu_workers = gr.update(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads',
                                 value=int(mp.cpu_count() / 2))
-    prune_model_var = gr.update(visible=False)
+
+    model_options = []
+    model_options_path = os.path.join(os.getcwd(), 'logs/')
+    if os.path.exists(model_options_path):
+        model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
+    if "model_path" in train_config_df and (train_config_df["model_path"]) and (
+    not train_config_df["model_path"] == ""):
+        model_options.append(train_config_df["model_path"])
+    prune_model_checkbox_var = gr.update(label='Prune Model', value=bool(prune_model_checkbox_var))
+    prune_model_checkbox_group_var = gr.update(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=bool(prune_model_checkbox_var))
+
+    prune_model_var = gr.update(visible=bool(prune_model_checkbox_var))
     train_resume_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=False)
     model_path_var = gr.update(visible=False)
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
@@ -991,7 +1038,19 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
         verbose, gpu_used_var, presets_run_ckbx_var, presets_run_button_var, presets_run_checkbox_group_var, \
         regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
         keep_jpgs, n_samples, n_iter, ddim_steps, max_training_steps, batch_size, cpu_workers, prune_model_var, \
-        train_resume_var, model_path_var, merge_data_list_var
+        train_resume_var, model_path_var, merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var
+
+def prune_model_checkbox(prune_model_checkbox_var):
+    model_options = []
+    model_options_path = os.path.join(os.getcwd(), 'logs/')
+    if os.path.exists(model_options_path):
+        model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
+    if "model_path" in train_config_df and (train_config_df["model_path"]) and (
+    not train_config_df["model_path"] == ""):
+        model_options.append(train_config_df["model_path"])
+    prune_model_checkbox_group_var = gr.update(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=bool(prune_model_checkbox_var))
+    prune_model_var = gr.update(visible=bool(prune_model_checkbox_var))
+    return prune_model_checkbox_group_var, prune_model_var
 
 '''
 ##################################################################################################################################
@@ -1065,10 +1124,18 @@ with gr.Blocks() as demo:
                     model_config_df["verbose"] = False
                     verbose = gr.Checkbox(label='Verbose Mode', value=False, interactive=True)
             with gr.Column():
+                temp_text = []
+                gpu_list = [i for i in range(0, torch.cuda.device_count())]
                 if not "gpu_used_var" in system_config_df:
-                    system_config_df["gpu_used_var"] = [i for i in range(0, torch.cuda.device_count())][0] # EXPECT THIS TO CHANGE IN THE FUTURE
-                temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
-                gpu_used_var = gr.Radio(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU')
+                    if len(gpu_list) > 0:
+                        system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
+                        temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
+                gpu_used_var = None
+                if "gpu_used_var" in system_config_df:
+                    gpu_used_var = gr.Radio(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])],
+                                             label='Select GPU', visible=True)
+                else:
+                    gpu_used_var = gr.Radio(choices=temp_text, label='Select GPU', visible=False)
 
         with gr.Accordion("Trying to Schedule Multiple Experiments without intervention? (Look Here!)"):
             gr.Markdown(
@@ -1173,11 +1240,20 @@ with gr.Blocks() as demo:
         else:
             cpu_workers = gr.Slider(minimum=1, maximum=mp.cpu_count(), step=1, label='Worker Threads', value=int(mp.cpu_count()/2))
 
+        model_options = []
+        model_options_path = os.path.join(os.getcwd(), 'logs/')
+        if os.path.exists(model_options_path):
+            model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
+        if "model_path" in train_config_df and (train_config_df["model_path"]) and (not train_config_df["model_path"] == ""):
+            model_options.append(train_config_df["model_path"])
+        prune_model_checkbox_var = gr.Checkbox(label='Prune Model')
+        prune_model_checkbox_group_var = gr.CheckboxGroup(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=False)
+
         with gr.Row():
             train_out_var = gr.Button(value="Train", variant='secondary')
-            prune_model_var = gr.Button(visible=False)
+            prune_model_var = gr.Button(value="Prune Model", visible=False)
 
-        with gr.Accordion("Trying to Resume Training? OR Merge Data Directories? (Look Here!)"):
+        with gr.Accordion("Trying to Resume Training?  OR  Merge Data Directories  OR  Use Augmentation Methods? (Look Here!)"):
             gr.Markdown(
                 """
                 ### Make sure a you have the full checkpoint directory in the ( logs ) directory :: if resuming training
@@ -1241,8 +1317,8 @@ with gr.Blocks() as demo:
                                                                         cpu_workers,
                                                                         model_path_var
                                                                         ], outputs=[merge_data_list_var])
-    train_out_var.click(fn=train_button, inputs=[train_resume_var, presets_run_checkbox_group_var], outputs=[prune_model_var], show_progress=True, scroll_to_output=True)
-    prune_model_var.click(fn=prune_ckpt, inputs=[], outputs=[])
+    train_out_var.click(fn=train_button, inputs=[train_resume_var, presets_run_checkbox_group_var], outputs=[], show_progress=True, scroll_to_output=True)
+    prune_model_var.click(fn=prune_ckpt, inputs=[prune_model_checkbox_group_var], outputs=[])
     train_resume_var.change(fn=train_resume_checkbox, inputs=[train_resume_var], outputs=[model_path_var])
 
     merge_data_button_var.click(fn=merge_data_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
@@ -1266,17 +1342,19 @@ with gr.Blocks() as demo:
                verbose,gpu_used_var,presets_run_ckbx_var,presets_run_button_var,presets_run_checkbox_group_var,\
                regularizer_var,final_img_path,seed_var,ddim_eta_var,scale_var,prompt_string,\
                keep_jpgs,n_samples,n_iter,ddim_steps,max_training_steps,batch_size,cpu_workers,prune_model_var,\
-               train_resume_var,model_path_var,merge_data_list_var])
+               train_resume_var,model_path_var,merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var])
 
-    presets_load_dropdown_var.change(fn=presets_load_button, inputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var], outputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_delete_button_var, presets_delete_checkbox_group_var, model_var, \
+    presets_load_dropdown_var.change(fn=presets_load_button, inputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var, prune_model_checkbox_var], outputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_delete_button_var, presets_delete_checkbox_group_var, model_var, \
                 preset_name_var, project_name, class_token, config_path, dataset_path, reg_dataset_path, \
                 verbose, gpu_used_var, presets_run_ckbx_var, presets_run_button_var, presets_run_checkbox_group_var, \
                 regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
                 keep_jpgs, n_samples, n_iter, ddim_steps, max_training_steps, batch_size, cpu_workers, prune_model_var, \
-                train_resume_var, model_path_var, merge_data_list_var])
+                train_resume_var, model_path_var, merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var])
 
     horizontal_flip_button_var.click(fn=horizontal_flip_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
     partial_image_crop_button_var.click(fn=partial_image_crop_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
+
+    prune_model_checkbox_var.change(fn=prune_model_checkbox, inputs=[prune_model_checkbox_var], outputs=[prune_model_checkbox_group_var, prune_model_var])
 
 if __name__ == "__main__":
     demo.launch()
