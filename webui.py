@@ -399,40 +399,47 @@ def train_resume_checkbox(checkbox):
             return gr.update(label='Path to ckpt model in logs directory', visible=True)
     else:
         return gr.update(visible=False)
-def prune_ckpt(prune_model_checkbox_group_var):
+
+
+def get_full_model_paths(model_name_list):
+    list_of_models = []
+
     model_options = []
     model_options_path = os.path.join(os.getcwd(), 'logs/')
     if os.path.exists(model_options_path):
         model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
     if "model_path" in train_config_df and (train_config_df["model_path"]) and (
-            not train_config_df["model_path"] == ""):
+            not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
         model_options.append(train_config_df["model_path"])
 
-    for name in prune_model_checkbox_group_var:
+    for name in model_name_list:
         # find all matches
         for full_path in model_options:
             if name in full_path and not os.path.isdir(full_path):
                 if '.ckpt' in name:
-                    prune_cmd = f"python prune-ckpt.py --ckpt {full_path}"
-                    execute(prune_cmd)
-                    verbose_print(f"Model Pruning Complete!")
+                    list_of_models.append(full_path)
                     break
             elif name in full_path:
                 # ckpt file ?
                 for file in os.listdir(full_path):
                     if '.ckpt' in file:
-                        prune_cmd = f"python prune-ckpt.py --ckpt {full_path}"
-                        execute(prune_cmd)
-                        verbose_print(f"Model Pruning Complete!")
+                        list_of_models.append(full_path)
                         break
                     # contains checkpoint dir ?
                     elif 'checkpoints' in file and os.path.isdir(os.path.join(full_path, file)):
-                        prune_cmd = f"python prune-ckpt.py --ckpt {os.path.join(os.path.join(full_path, 'checkpoints/'), 'last.ckpt')}"
-                        execute(prune_cmd)
-                        verbose_print(f"Model Pruning Complete!")
+                        list_of_models.append(os.path.join(os.path.join(full_path, 'checkpoints/'), 'last.ckpt'))
                         break
+    return list_of_models
 
-def train_button(train_resume_var, presets_run_checkbox_group_var):
+
+def prune_ckpt(prune_model_checkbox_group_var):
+    list_of_models = get_full_model_paths(prune_model_checkbox_group_var)
+    for model_path in list_of_models:
+        prune_cmd = f"python prune-ckpt.py --ckpt {model_path}"
+        execute(prune_cmd)
+        verbose_print(f"Model Pruning Complete!")
+
+def train_button(train_resume_checkbox_var, presets_run_checkbox_group_var, resume_train_radio_var):
     verbose_print(f"===========------- TRAINING -------===========")
     global model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df
     model_config_df_backup, dataset_config_df_backup, system_config_df_backup, image_gen_config_df_backup, train_config_df_backup = copy.deepcopy([model_config_df, dataset_config_df, system_config_df, image_gen_config_df, train_config_df])
@@ -443,14 +450,21 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
             # load preset into config only
             preset_to_config(selected_preset)
             # train
-            train_button(train_resume_var=False, presets_run_checkbox_group_var="")
+            train_button(train_resume_checkbox_var=train_resume_checkbox_var, presets_run_checkbox_group_var="", resume_train_radio_var=resume_train_radio_var, )
     else:
         try:
             # train the model
             ckpt = model_config_df['model_name']
             if ' ' in ckpt:
                 ckpt = f"\'{ckpt}\'"
-            train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t --actual_resume {ckpt} "
+            train_cmd = f"python main.py --base {dataset_config_df['config_path']} -t"
+
+            if train_resume_checkbox_var and not resume_train_radio_var == "":
+                list_of_models = get_full_model_paths([resume_train_radio_var])
+                list_of_models = list_of_models[0] # there can only be one
+                train_cmd = f"{train_cmd} --resume --actual_resume {list_of_models}"
+            else:
+                train_cmd = f"{train_cmd} --actual_resume {ckpt}"
 
             if image_gen_config_df['final_img_path'] and not image_gen_config_df['final_img_path'] == "":
                 train_cmd = f"{train_cmd} --reg_data_root {image_gen_config_df['final_img_path']}"
@@ -460,8 +474,7 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
             f"--max_training_steps {train_config_df['max_training_steps']} --class_word {image_gen_config_df['prompt_string']} --token {dataset_config_df['class_token']} " \
             f"--no-test --batch_size {train_config_df['batch_size']} --workers {train_config_df['cpu_workers']}"
 
-            if train_resume_var:
-                train_cmd = f"{train_cmd} --resume --actual_resume {train_config_df['model_path']}"
+
 
             verbose_print("============================== TRAINING COMMAND TEST ==============================")
             verbose_print(train_cmd)
@@ -492,6 +505,22 @@ def train_button(train_resume_var, presets_run_checkbox_group_var):
     verbose_print(f"image_gen_config_df:\t{image_gen_config_df}")
     verbose_print(f"train_config_df:\t{train_config_df}")
     verbose_print("%"*42)
+
+    model_options = []
+    model_options_path = os.path.join(os.getcwd(), 'logs/')
+    if os.path.exists(model_options_path):
+        model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
+    if "model_path" in train_config_df and (train_config_df["model_path"]) and (
+            not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
+        model_options.append(train_config_df["model_path"])
+
+    prune_model_checkbox_group_var = gr.update(label='Prune Model Options',
+                                               choices=sorted([name.split("/")[-1] for name in model_options]),
+                                               visible=bool(prune_model_checkbox_var))
+    resume_train_radio_var = gr.update(label='Resume Model Train Options',
+                                       choices=sorted([name.split("/")[-1] for name in model_options]),
+                                       visible=False)
+    return prune_model_checkbox_group_var, resume_train_radio_var
 
 def merge_data_button(merge_data_list_var):
     global dataset_merge_dirs
@@ -832,15 +861,21 @@ def presets_clear_button():
     if os.path.exists(model_options_path):
         model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
     if "model_path" in train_config_df and (train_config_df["model_path"]) and (
-            not train_config_df["model_path"] == ""):
+            not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
         model_options.append(train_config_df["model_path"])
+
     prune_model_checkbox_var = gr.update(label='Prune Model', value=False)
     prune_model_checkbox_group_var = gr.update(label='Prune Model Options',
                                                       choices=sorted([name.split("/")[-1] for name in model_options]),
-                                                      visible=False)
+                                                      visible=False, value=[])
+    train_resume_checkbox_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=False)
+    resume_train_radio_var = gr.update(label='Resume Model Train Options',
+                                       choices=sorted([name.split("/")[-1] for name in model_options]),
+                                       visible=False, value="")
+
     prune_model_var = gr.update(visible=False)
-    train_resume_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=False)
     model_path_var = gr.update(visible=False)
+
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
     merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
 
@@ -851,9 +886,10 @@ def presets_clear_button():
            verbose,gpu_used_var,presets_run_ckbx_var,presets_run_button_var,presets_run_checkbox_group_var,\
            regularizer_var,final_img_path,seed_var,ddim_eta_var,scale_var,prompt_string,\
            keep_jpgs,n_samples,n_iter,ddim_steps,max_training_steps,batch_size,cpu_workers,prune_model_var,\
-           train_resume_var,model_path_var,merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var
+           train_resume_checkbox_var,model_path_var,merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var, \
+           resume_train_radio_var
 
-def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var, prune_model_checkbox_var):
+def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var, prune_model_checkbox_var, train_resume_checkbox_var):
     verbose_print(f"==========----- PRESET LOAD -----==========")
     presets_delete_ckbx_var_temp = presets_delete_ckbx_var
     presets_run_ckbx_var_temp = presets_run_ckbx_var
@@ -879,7 +915,7 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
     verbose, gpu_used_var, presets_run_ckbx_var, presets_run_button_var, presets_run_checkbox_group_var, \
     regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
     keep_jpgs, n_samples, n_iter, ddim_steps, max_training_steps, batch_size, cpu_workers, prune_model_var, \
-    train_resume_var, model_path_var, merge_data_list_var = [None]*35
+    train_resume_checkbox_var, model_path_var, merge_data_list_var = [None]*36
 
     # update components
     presets_load_dropdown_var = gr.update(choices=get_all_presets_keys(), label='Optional Presets')
@@ -1020,14 +1056,19 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
     if os.path.exists(model_options_path):
         model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
     if "model_path" in train_config_df and (train_config_df["model_path"]) and (
-    not train_config_df["model_path"] == ""):
+    not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
         model_options.append(train_config_df["model_path"])
+
     prune_model_checkbox_var = gr.update(label='Prune Model', value=bool(prune_model_checkbox_var))
-    prune_model_checkbox_group_var = gr.update(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=bool(prune_model_checkbox_var))
+    prune_model_checkbox_group_var = gr.update(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=bool(prune_model_checkbox_var), value=[])
+    train_resume_checkbox_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=bool(train_resume_checkbox_var))
+    resume_train_radio_var = gr.update(label='Resume Model Train Options',
+                                       choices=sorted([name.split("/")[-1] for name in model_options]),
+                                       visible=bool(train_resume_checkbox_var), value="")
 
     prune_model_var = gr.update(visible=bool(prune_model_checkbox_var))
-    train_resume_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=False)
-    model_path_var = gr.update(visible=False)
+    model_path_var = gr.update(visible=bool(prune_model_checkbox_var) or bool(train_resume_checkbox_var))
+
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
     merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
 
@@ -1038,7 +1079,19 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
         verbose, gpu_used_var, presets_run_ckbx_var, presets_run_button_var, presets_run_checkbox_group_var, \
         regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
         keep_jpgs, n_samples, n_iter, ddim_steps, max_training_steps, batch_size, cpu_workers, prune_model_var, \
-        train_resume_var, model_path_var, merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var
+        train_resume_checkbox_var, model_path_var, merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var, \
+        resume_train_radio_var
+
+def resume_train_radio(train_resume_checkbox_var):
+    model_options = []
+    model_options_path = os.path.join(os.getcwd(), 'logs/')
+    if os.path.exists(model_options_path):
+        model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
+    if "model_path" in train_config_df and (train_config_df["model_path"]) and (
+    not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
+        model_options.append(train_config_df["model_path"])
+    resume_train_radio_var = gr.update(label='Resume Model Train Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=bool(train_resume_checkbox_var))
+    return resume_train_radio_var
 
 def prune_model_checkbox(prune_model_checkbox_var):
     model_options = []
@@ -1046,7 +1099,7 @@ def prune_model_checkbox(prune_model_checkbox_var):
     if os.path.exists(model_options_path):
         model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
     if "model_path" in train_config_df and (train_config_df["model_path"]) and (
-    not train_config_df["model_path"] == ""):
+    not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
         model_options.append(train_config_df["model_path"])
     prune_model_checkbox_group_var = gr.update(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=bool(prune_model_checkbox_var))
     prune_model_var = gr.update(visible=bool(prune_model_checkbox_var))
@@ -1126,16 +1179,19 @@ with gr.Blocks() as demo:
             with gr.Column():
                 temp_text = []
                 gpu_list = [i for i in range(0, torch.cuda.device_count())]
-                if not "gpu_used_var" in system_config_df:
-                    if len(gpu_list) > 0:
-                        system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
-                        temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
                 gpu_used_var = None
-                if "gpu_used_var" in system_config_df:
-                    gpu_used_var = gr.Radio(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])],
-                                             label='Select GPU', visible=True)
+
+                if len(gpu_list) > 0:
+                    system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
+                    temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
+                    if "gpu_used_var" in system_config_df:
+                        gpu_used_var = gr.Radio(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])],
+                                                label='Select GPU', visible=True)
+                    else:
+                        gpu_used_var = gr.Radio(choices=temp_text, label='Select GPU', visible=True)
                 else:
                     gpu_used_var = gr.Radio(choices=temp_text, label='Select GPU', visible=False)
+
 
         with gr.Accordion("Trying to Schedule Multiple Experiments without intervention? (Look Here!)"):
             gr.Markdown(
@@ -1244,7 +1300,7 @@ with gr.Blocks() as demo:
         model_options_path = os.path.join(os.getcwd(), 'logs/')
         if os.path.exists(model_options_path):
             model_options = [os.path.join(model_options_path, directory) for directory in os.listdir(model_options_path)]
-        if "model_path" in train_config_df and (train_config_df["model_path"]) and (not train_config_df["model_path"] == ""):
+        if "model_path" in train_config_df and (train_config_df["model_path"]) and (not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
             model_options.append(train_config_df["model_path"])
         prune_model_checkbox_var = gr.Checkbox(label='Prune Model')
         prune_model_checkbox_group_var = gr.CheckboxGroup(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=False)
@@ -1267,8 +1323,17 @@ with gr.Blocks() as demo:
                 #### It is IMPORTANT that images are either (1024x512) or (512x1024) to use the partial crop button
                 """)
             with gr.Row():
-                train_resume_var = gr.Checkbox(label='Resume Training (Uses the Current Model Path)', value=False)
+                model_options = []
+                model_options_path = os.path.join(os.getcwd(), 'logs/')
+                if os.path.exists(model_options_path):
+                    model_options = [os.path.join(model_options_path, directory) for directory in
+                                     os.listdir(model_options_path)]
+                if "model_path" in train_config_df and (train_config_df["model_path"]) and (not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
+                    model_options.append(train_config_df["model_path"])
+                train_resume_checkbox_var = gr.Checkbox(label='Resume Training (Uses the Current Model Path)')
                 model_path_var = gr.Textbox(visible=False)
+                resume_train_radio_var = gr.Radio(label='Resume Model Train Options', choices=sorted(
+                    [name.split("/")[-1] for name in model_options]), visible=False)
             with gr.Row():
                 with gr.Column():
                     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
@@ -1317,9 +1382,9 @@ with gr.Blocks() as demo:
                                                                         cpu_workers,
                                                                         model_path_var
                                                                         ], outputs=[merge_data_list_var])
-    train_out_var.click(fn=train_button, inputs=[train_resume_var, presets_run_checkbox_group_var], outputs=[], show_progress=True, scroll_to_output=True)
+    train_out_var.click(fn=train_button, inputs=[train_resume_checkbox_var, presets_run_checkbox_group_var, resume_train_radio_var], outputs=[prune_model_checkbox_group_var, resume_train_radio_var], show_progress=True, scroll_to_output=True)###### and output for  training UPDATE CHECKBOXGROUP
     prune_model_var.click(fn=prune_ckpt, inputs=[prune_model_checkbox_group_var], outputs=[])
-    train_resume_var.change(fn=train_resume_checkbox, inputs=[train_resume_var], outputs=[model_path_var])
+    train_resume_checkbox_var.change(fn=train_resume_checkbox, inputs=[train_resume_checkbox_var], outputs=[model_path_var])
 
     merge_data_button_var.click(fn=merge_data_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
 
@@ -1342,19 +1407,21 @@ with gr.Blocks() as demo:
                verbose,gpu_used_var,presets_run_ckbx_var,presets_run_button_var,presets_run_checkbox_group_var,\
                regularizer_var,final_img_path,seed_var,ddim_eta_var,scale_var,prompt_string,\
                keep_jpgs,n_samples,n_iter,ddim_steps,max_training_steps,batch_size,cpu_workers,prune_model_var,\
-               train_resume_var,model_path_var,merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var])
+               train_resume_checkbox_var,model_path_var,merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var, resume_train_radio_var])
 
     presets_load_dropdown_var.change(fn=presets_load_button, inputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var, prune_model_checkbox_var], outputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_delete_button_var, presets_delete_checkbox_group_var, model_var, \
                 preset_name_var, project_name, class_token, config_path, dataset_path, reg_dataset_path, \
                 verbose, gpu_used_var, presets_run_ckbx_var, presets_run_button_var, presets_run_checkbox_group_var, \
                 regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
                 keep_jpgs, n_samples, n_iter, ddim_steps, max_training_steps, batch_size, cpu_workers, prune_model_var, \
-                train_resume_var, model_path_var, merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var])
+                train_resume_checkbox_var, model_path_var, merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var, resume_train_radio_var])
 
     horizontal_flip_button_var.click(fn=horizontal_flip_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
     partial_image_crop_button_var.click(fn=partial_image_crop_button, inputs=[merge_data_list_var], outputs=[merge_data_list_var])
 
     prune_model_checkbox_var.change(fn=prune_model_checkbox, inputs=[prune_model_checkbox_var], outputs=[prune_model_checkbox_group_var, prune_model_var])
+    train_resume_checkbox_var.change(fn=resume_train_radio, inputs=[train_resume_checkbox_var],
+                                    outputs=[resume_train_radio_var])
 
 if __name__ == "__main__":
     demo.launch()
