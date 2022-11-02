@@ -824,17 +824,20 @@ def presets_clear_button():
     model_config_df["verbose"] = False
     verbose = gr.update(label='Verbose Mode', value=False, interactive=True)
 
-    gpu_list = [i for i in range(0, torch.cuda.device_count())]
     temp_text = []
+    gpu_list = [i for i in range(0, torch.cuda.device_count())]
+    gpu_used_var = None
+
     if len(gpu_list) > 0:
-        system_config_df["gpu_used_var"] = gpu_list[0]
         temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
-
-    if "gpu_used_var" in system_config_df:
-        gpu_used_var = gr.update(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU', visible=True)
+        if "gpu_used_var" in system_config_df:
+            gpu_used_var = gr.Radio(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])],
+                                    label='Select GPU', visible=True)
+        else:
+            system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
+            gpu_used_var = gr.Radio(choices=temp_text, label='Select GPU', visible=True)
     else:
-        gpu_used_var = gr.update(choices=temp_text, label='Select GPU', visible=False)
-
+        gpu_used_var = gr.Radio(choices=temp_text, label='Select GPU', visible=False)
 
     presets_run_ckbx_var = gr.update(label='Job Scheduler', value=False)
     presets_run_button_var = gr.update(value='Image Gen + Train', variant='primary', visible=False)
@@ -915,7 +918,7 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
     verbose, gpu_used_var, presets_run_ckbx_var, presets_run_button_var, presets_run_checkbox_group_var, \
     regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
     keep_jpgs, n_samples, n_iter, ddim_steps, max_training_steps, batch_size, cpu_workers, prune_model_var, \
-    train_resume_checkbox_var, model_path_var, merge_data_list_var = [None]*36
+    train_resume_checkbox_var, model_path_var, merge_data_list_var = [None]*33
 
     # update components
     presets_load_dropdown_var = gr.update(choices=get_all_presets_keys(), label='Optional Presets')
@@ -963,14 +966,16 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
 
     temp_text = []
     gpu_list = [i for i in range(0, torch.cuda.device_count())]
-    if not "gpu_used_var" in system_config_df:
-        if len(gpu_list) > 0:
-            system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
-            temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
-
     gpu_used_var = None
-    if "gpu_used_var" in system_config_df:
-        gpu_used_var = gr.update(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])], label='Select GPU', visible=True)
+
+    if len(gpu_list) > 0:
+        temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
+        if "gpu_used_var" in system_config_df:
+            gpu_used_var = gr.update(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])],
+                                    label='Select GPU', visible=True)
+        else:
+            system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
+            gpu_used_var = gr.update(choices=temp_text, label='Select GPU', visible=True)
     else:
         gpu_used_var = gr.update(choices=temp_text, label='Select GPU', visible=False)
 
@@ -1182,12 +1187,12 @@ with gr.Blocks() as demo:
                 gpu_used_var = None
 
                 if len(gpu_list) > 0:
-                    system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
                     temp_text = [f"gpu: {i}" for i in range(0, torch.cuda.device_count())]
                     if "gpu_used_var" in system_config_df:
                         gpu_used_var = gr.Radio(choices=temp_text, value=temp_text[(system_config_df["gpu_used_var"])],
                                                 label='Select GPU', visible=True)
                     else:
+                        system_config_df["gpu_used_var"] = gpu_list[0]  # EXPECT THIS TO CHANGE IN THE FUTURE
                         gpu_used_var = gr.Radio(choices=temp_text, label='Select GPU', visible=True)
                 else:
                     gpu_used_var = gr.Radio(choices=temp_text, label='Select GPU', visible=False)
@@ -1409,7 +1414,7 @@ with gr.Blocks() as demo:
                keep_jpgs,n_samples,n_iter,ddim_steps,max_training_steps,batch_size,cpu_workers,prune_model_var,\
                train_resume_checkbox_var,model_path_var,merge_data_list_var, prune_model_checkbox_var, prune_model_checkbox_group_var, resume_train_radio_var])
 
-    presets_load_dropdown_var.change(fn=presets_load_button, inputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var, prune_model_checkbox_var], outputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_delete_button_var, presets_delete_checkbox_group_var, model_var, \
+    presets_load_dropdown_var.change(fn=presets_load_button, inputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_run_ckbx_var, prune_model_checkbox_var, train_resume_checkbox_var], outputs=[presets_load_dropdown_var, presets_delete_ckbx_var, presets_delete_button_var, presets_delete_checkbox_group_var, model_var, \
                 preset_name_var, project_name, class_token, config_path, dataset_path, reg_dataset_path, \
                 verbose, gpu_used_var, presets_run_ckbx_var, presets_run_button_var, presets_run_checkbox_group_var, \
                 regularizer_var, final_img_path, seed_var, ddim_eta_var, scale_var, prompt_string, \
