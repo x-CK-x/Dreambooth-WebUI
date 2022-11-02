@@ -658,6 +658,9 @@ def partial_image_crop_button(merge_data_list_var):
                         img.save(os.path.join(new_paths_to_flip[i], f"{counter}.png"))
                         counter += 1
                     verbose_print(f'Done Generating Images of the \'{(fragment).split("_")}\' Fragment :: {paths_to_flip[i]} into {new_paths_to_flip[i]}')
+            # move the original directories up ONE level
+            for data_path in paths_to_flip:
+                os.rename(src=data_path, dst=os.path.join(os.getcwd(), data_path.split('/')[-1]))
         else:
             verbose_print(f"INVALID image resolutions detected. EXPECTED (512x1024) or (1024x512)")
 
@@ -1321,6 +1324,7 @@ with gr.Blocks() as demo:
                 ### Make sure a you have the full checkpoint directory in the ( logs ) directory :: if resuming training
                 ### Make sure to check all sub-directories you want merged within the path of your data directory
                 ### ( IMPORTANT ) if merging, be aware that the data merged is (not copied); please back up sub-directories if you want to keep their contents!
+                ### FILES THAT ARE MERGED, are placed into the PARENT directory
                 ### ( EVEN MORE IMPORTANT ) make sure that if merging sub-directories, that there is no left over data still in the current dataset_path. In other words make sure images are in some kind of sub-directory. (otherwise data could be overwritten!)
                 ### To refresh the list of sub-directories (checkboxes) after merging, then go to the first tab in the UI and click ( APPLY SETTINGS )
                 #### The Horizontal Flip \'Button\' creates new directories containing the flipped images
