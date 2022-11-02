@@ -1065,15 +1065,15 @@ def presets_load_button(presets_load_dropdown_var, presets_delete_ckbx_var, pres
     not train_config_df["model_path"] == "") and (not train_config_df["model_path"] == "None"):
         model_options.append(train_config_df["model_path"])
 
-    prune_model_checkbox_var = gr.update(label='Prune Model', value=bool(prune_model_checkbox_var))
-    prune_model_checkbox_group_var = gr.update(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=bool(prune_model_checkbox_var), value=[])
-    train_resume_checkbox_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=bool(train_resume_checkbox_var))
+    prune_model_checkbox_var = gr.update(label='Prune Model', value=False)
+    prune_model_checkbox_group_var = gr.update(label='Prune Model Options', choices=sorted([name.split("/")[-1] for name in model_options]), visible=False, value=[])
+    train_resume_checkbox_var = gr.update(label='Resume Training (Uses the Current Model Path)', value=False)
     resume_train_radio_var = gr.update(label='Resume Model Train Options',
                                        choices=sorted([name.split("/")[-1] for name in model_options]),
-                                       visible=bool(train_resume_checkbox_var), value="")
+                                       visible=False, value="")
 
-    prune_model_var = gr.update(visible=bool(prune_model_checkbox_var))
-    model_path_var = gr.update(visible=bool(prune_model_checkbox_var) or bool(train_resume_checkbox_var))
+    prune_model_var = gr.update(visible=False)
+    model_path_var = gr.update(visible=False)
 
     sub_dir_names = [data_dir_path.split('/')[-1] for data_dir_path in dataset_merge_dirs]
     merge_data_list_var = gr.update(choices=sub_dir_names, label="Dataset Sub-Directories", value=[])
