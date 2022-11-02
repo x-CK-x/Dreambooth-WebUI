@@ -25,7 +25,7 @@ Please make sure to install python: [Python Official Website](https://www.python
 - [X] The Pruning Feature from the repo (12GB to 2GB)
 - [X] Resolve Gradio Components not updating Components for real-time logging feed
 - [ ] Add realtime graphs for tracking loss & other metrics
-- [ ] Separate Mode to run the Diffusers Dreambooth with UI (resolves *most* gpu memory constraints)
+- [ ] Separate Mode to run the Diffusers Dreambooth with UI (resolves *most* gpu memory constraints) <---> *(In Next Update)*
     - [ ] Option 1: [fast-stable-diffusion](https://github.com/TheLastBen/fast-stable-diffusion)
     - [ ] Option 2: [ShivamShrirao-diffusers](https://github.com/ShivamShrirao/diffusers/tree/main/examples/dreambooth)
 - [ ] Insert support for jupyter notebook & google colab
