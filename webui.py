@@ -621,44 +621,45 @@ def partial_image_crop_button(merge_data_list_var):
 
     # sample image & determine valid dimensions & ( portrait or landscape )
     images_list = glob.glob1(paths_to_flip[0], "*.png")
-    original_image_path = os.path.join(paths_to_flip[0], images_list[0])
-    img = Image.open(original_image_path)
-    width, height = img.size
-    if (width == 1024 and height == 512) or (width == 512 and height == 1024): # valid
-        img_fragment_text = []
-        crop_dims = [] # contains left, top, right, bottom (FOR EACH FRAGMENT)
-        if (width == 512 and height == 1024): # portrait
-            img_fragment_text = ["_top", "_mid", "_bottom"]
-            mid_upper = math.ceil(height/3)
-            mid_lower = mid_upper+512
-            crop_dims = [(0, 0, width, int(height/2)), (0, mid_upper, width, mid_lower), (0, int(height/2), width, height)]
-        else: # landscape
-            img_fragment_text = ["_left", "_mid", "_right"]
-            mid_left = math.ceil(width/3)
-            mid_right = mid_left+512
-            crop_dims = [(0, 0, int(width/2), height), (mid_left, 0, mid_right, height), (int(width/2), 0, width, height)]
-        # generate new directories
-        for fragment, crop_dim in zip(img_fragment_text, crop_dims):
-            new_paths_to_flip = create_new_dirs(paths_to_flip, fragment)
+    if len(images_list) > 0:
+        original_image_path = os.path.join(paths_to_flip[0], images_list[0])
+        img = Image.open(original_image_path)
+        width, height = img.size
+        if (width == 1024 and height == 512) or (width == 512 and height == 1024): # valid
+            img_fragment_text = []
+            crop_dims = [] # contains left, top, right, bottom (FOR EACH FRAGMENT)
+            if (width == 512 and height == 1024): # portrait
+                img_fragment_text = ["_vertical_top", "_vertical_mid", "_vertical_bottom"]
+                mid_upper = math.ceil(height/3)
+                mid_lower = mid_upper+512
+                crop_dims = [(0, 0, width, int(height/2)), (0, mid_upper, width, mid_lower), (0, int(height/2), width, height)]
+            else: # landscape
+                img_fragment_text = ["_horizontal_left", "_horizontal_mid", "_horizontal_right"]
+                mid_left = math.ceil(width/3)
+                mid_right = mid_left+512
+                crop_dims = [(0, 0, int(width/2), height), (mid_left, 0, mid_right, height), (int(width/2), 0, width, height)]
+            # generate new directories
+            for fragment, crop_dim in zip(img_fragment_text, crop_dims):
+                new_paths_to_flip = create_new_dirs(paths_to_flip, fragment)
 
-            # loop for all sub-folders (SRC)
-            for i in range(0, len(paths_to_flip)):
-                ### get images from sub-dir (SRC)
-                images_list = glob.glob1(paths_to_flip[i], "*.png")
+                # loop for all sub-folders (SRC)
+                for i in range(0, len(paths_to_flip)):
+                    ### get images from sub-dir (SRC)
+                    images_list = glob.glob1(paths_to_flip[i], "*.png")
 
-                ### create & move images from each (SRC) into the (DST)
-                counter = 0
-                for image in images_list:
-                    original_image_path = os.path.join(paths_to_flip[i], image)
-                    # crop image
-                    img = Image.open(original_image_path)
-                    img = img.crop(crop_dim)
-                    # save image
-                    img.save(os.path.join(new_paths_to_flip[i], f"{counter}.png"))
-                    counter += 1
-                verbose_print(f'Done Generating Images of the \'{(fragment).split("_")}\' Fragment :: {paths_to_flip[i]} into {new_paths_to_flip[i]}')
-    else:
-        verbose_print(f"INVALID image resolutions detected. EXPECTED (512x1024) or (1024x512)")
+                    ### create & move images from each (SRC) into the (DST)
+                    counter = 0
+                    for image in images_list:
+                        original_image_path = os.path.join(paths_to_flip[i], image)
+                        # crop image
+                        img = Image.open(original_image_path)
+                        img = img.crop(crop_dim)
+                        # save image
+                        img.save(os.path.join(new_paths_to_flip[i], f"{counter}.png"))
+                        counter += 1
+                    verbose_print(f'Done Generating Images of the \'{(fragment).split("_")}\' Fragment :: {paths_to_flip[i]} into {new_paths_to_flip[i]}')
+        else:
+            verbose_print(f"INVALID image resolutions detected. EXPECTED (512x1024) or (1024x512)")
 
     # update merged dirs list
     dataset_merge_dirs = update_merged_dirs()
